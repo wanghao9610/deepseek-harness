@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>DeepSeek Harness</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --surface: #f6f6f7;
+    --text: #1b1b1f;
+    --muted: #6b6b76;
+    --accent: #4d6bfe;
+    --panel: #ffffff;
+    --border: rgb(0 0 0 / 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: #101014;
+      --text: #ececf1;
+      --muted: #9a9aa6;
+      --panel: #1a1a20;
+      --border: rgb(255 255 255 / 0.09);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  main { width: min(420px, calc(100vw - 64px)); text-align: center; }
+  .mark {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 20px;
+    border-radius: 14px;
+    background: var(--accent);
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  p { margin: 0; color: var(--muted); }
+  .track {
+    height: 2px;
+    margin: 22px auto 0;
+    width: 180px;
+    border-radius: 2px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .track::after {
+    content: "";
+    display: block;
+    height: 100%;
+    width: 40%;
+    border-radius: 2px;
+    background: var(--accent);
+    animation: slide 1.4s ease-in-out infinite;
+  }
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+  .detail {
+    display: none;
+    margin-top: 18px;
+    padding: 12px 14px;
+    text-align: left;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .actions { display: none; margin-top: 20px; gap: 8px; justify-content: center; }
+  a.button {
+    appearance: none;
+    padding: 6px 14px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 12px;
+  }
+  a.button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  body.failed .track { display: none; }
+  body.failed .detail, body.failed .actions { display: flex; }
+  body.failed .detail { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark">DS</div>
+  <h1 id="headline">Starting DeepSeek Harness</h1>
+  <p id="message">Preparing the agent runtime…</p>
+  <div class="track"></div>
+  <div class="detail" id="detail"></div>
+  <div class="actions">
+    <a class="button primary" href="dsh-action:retry">Try Again</a>
+    <a class="button" href="dsh-action:open-log">Reveal Log</a>
+    <a class="button" href="dsh-action:quit">Quit</a>
+  </div>
+</main>
+<script>
+  const params = new URLSearchParams(location.search)
+  const state = params.get('state') ?? 'starting'
+  const headline = document.getElementById('headline')
+  const message = document.getElementById('message')
+  if (state === 'failed') {
+    document.body.classList.add('failed')
+    headline.textContent = 'The harness runtime could not start'
+    message.textContent = 'The log below is what the runtime reported.'
+    document.getElementById('detail').textContent = params.get('reason') ?? 'No reason was reported.'
+  } else if (state === 'restarting') {
+    headline.textContent = 'Restarting the harness runtime'
+    message.textContent = 'The runtime stopped and is being started again…'
+  } else if (state === 'stopped') {
+    headline.textContent = 'The harness runtime is stopped'
+    message.textContent = 'Starting it again…'
+  }
+</script>
+</body>
+</html>

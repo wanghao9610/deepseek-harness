@@ -35,7 +35,7 @@ Status: implemented
 ## 曾考虑的替代方案
 
 - **复用单文件可执行流水线。**[single-exe 分发](../architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md)已经能物化出无符号链接的部署闭包并构建 macOS 二进制，因此它可以承载一个自包含的应用包。在这一步被否决：它的闭包是 JSON-RPC 运行时，而不是带前端 dist 的 web 界面；而且只有当签名与公证使其可分发时，组装一个自包含应用包才值得。当目标转为分发时，它仍是应当在其上构建的基础。
-- **Electron 外壳。**[GUI 分层](../architecture/2026-07-19-gui-layering-and-rpc-protocol.md)已经为此预留了设计，可经 IPC fetch 载体复用 web client 各包。此处否决是因为代价不成比例：`dsh-host-webserver` 还承载着 `/api`、插件 bundle 端点、重载事件流以及 boot manifest 注入，在 Electron 下每一项都需要新的载体。启动器无需触碰已发布的源码即可满足当下需求。
+- **Electron 外壳。**[GUI 分层](../architecture/2026-07-19-gui-layering-and-rpc-protocol.md)已经为此预留了设计，可经 IPC fetch 载体复用 web client 各包。此处否决是因为代价不成比例：`dsh-host-webserver` 还承载着 `/api`、插件 bundle 端点、重载事件流以及 boot manifest 注入，在 Electron 下每一项都需要新的载体。启动器无需触碰已发布的源码即可满足当下需求。后来[桌面应用](../architecture/2026-08-13-electron-desktop-application.md)交付了那个外壳：它保留 HTTP 载体并加载其本地回环源，这正是消除上述反对意见的做法；它是拥有独立 bundle id 的另一件产品，而本启动器仍是绑定检出的便利设施。
 - **所有构建一律使用 `LSUIElement`。** 这能在不依赖编译器的前提下消除 Dock 弹跳，但同时也失去 Dock 图标及其退出菜单项，只能靠「活动监视器」来停止服务。它仅作为没有 `swiftc` 时的回退方案保留。
 - **签名与公证。** 在应用包仅面向构建它的那台机器时，这超出范围：本机构建的应用包不带隔离标记，Gatekeeper 根本不会检查它。引入签名意味着要按子进程路径逐一推敲授权项、准备 Developer ID 凭证并新增发布任务——这些工作属于自包含产物，而不属于启动器。
 - **打包时从 SVG 生成图标。** 否决，因为 `sips` 与 `iconutil` 读取的是 PNG，而 macOS 没有任何系统工具能栅格化 SVG，这样做会引入一项贡献者未必具备的渲染器依赖。渲染出的 PNG 与其来源 SVG 一并提交。

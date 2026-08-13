@@ -5,17 +5,22 @@
   ],
   "ignoreBinaries": [
     "bwrap",
+    "codesign",
+    "hdiutil",
     "icacls",
     "musl-gcc",
+    "powershell",
     "python3",
     "sandbox-exec",
+    "swiftc",
     "tar",
     "taskkill",
     "where.exe"
   ],
   "ignoreWorkspaces": [
     "vendor/*",
-    "python/sdk-runtime"
+    "python/sdk-runtime",
+    "apps/desktop/runtime"
   ],
   "ignoreDependencies": [
     "@yarnpkg/cli-dist",
@@ -738,6 +743,19 @@
       ],
       "ignoreDependencies": [
         "@deepseek-ai/.+"
+      ]
+    },
+    "apps/desktop": {
+      "entry": [
+        "src/main.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "electron-builder"
       ]
     },
     "packages/client/modules": {

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-13-macos-app-bundle-packaging.md
-2026-08-13-macos-app-bundle-packaging.md: 5b1ee3aa1aed90e94c0d5ec33b311c423a9d9e76
-2026-08-13-macos-app-bundle-packaging.zh.md: 10b4421c5f335915165f0946d52092f1e3eaf0da
+2026-08-13-macos-app-bundle-packaging.md: b12e89c47200ad382a3104b116b39686cf4f4293
+2026-08-13-macos-app-bundle-packaging.zh.md: 2d34133ca24bc0f0adc8f925453bba63bc8a247d

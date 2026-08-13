@@ -150,6 +150,21 @@ ACP 自动化服务器通过 JSON-RPC stdio 提供全新 agent 会话，同样�
 pnpm run demo:acp
 ```
 
+### macOS 桌面应用
+
+`pnpm run package:desktop` 构建 Electron 桌面应用与 `dist-desktop/DeepSeek-Harness-<version>-<arch>.dmg`。与下文的启动器包不同，该产物自包含：它携带 Electron 运行时、一份已部署的 harness 闭包以及已构建的前端，因此安装后的应用不需要代码检出、Node 或包管理器。它只在 macOS 上构建，且要求已完成 `pnpm run build`：
+
+```sh
+pnpm run build
+pnpm run package:desktop
+```
+
+标志用于选择目标并缩短重复构建：`--arch <arm64|x64>`（默认为本机）、`--out <dir>`、`--no-dmg`、`--skip-deploy`（复用 `dist-desktop/runtime` 中已有的闭包），以及 `--skip-smoke`（跳过启动它）。
+
+流水线部署由生成的 `apps/desktop/runtime/package.json` 指定的闭包，剪除仅构建所需的材料与非本平台预构建产物，**启动该闭包**并读取它所服务的页面，围绕它打包外壳，对包做即席签名——这在 Apple 芯片上是必需的，因为打包会使 Electron 自身的签名失效——最后写出磁盘镜像。冒烟启动失败，就是流水线自己报告它即将交付的闭包跑不起来。
+
+在改动 CLI 的依赖图之后，用 `pnpm run gen-desktop-runtime-closure` 重新生成闭包清单（随后执行 `pnpm install`）；`pnpm run hygiene` 会报告清单陈旧。应用行为见[包 README](../apps/desktop/README.md)，设计见[桌面应用 Agent Note](../.agents/notes/implemented/architecture/2026-08-13-electron-desktop-application.md)。
+
 ### macOS 应用包
 
 `pnpm run package:mac` 构建 `dist-macos/DSH.app` 以及承载它的 `dist-macos/DSH.dmg`，使 `dsh web` 从 Dock 启动而不是从终端启动。它只在 macOS 上构建，并拒绝尚未完成 `pnpm run build` 的 checkout：

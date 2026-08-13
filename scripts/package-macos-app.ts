@@ -15,11 +15,12 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, extname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { createDiskImage } from './macos-disk-image.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -517,16 +518,7 @@ async function writeIcon(source: string, resources: string): Promise<void> {
  * @returns the image path.
  */
 async function createDmg(appPath: string, appName: string, outputDir: string): Promise<string> {
-  const staging = await mkdtemp(join(tmpdir(), 'dsh-dmg-'))
-  const dmgPath = join(outputDir, `${appName}.dmg`)
-  try {
-    await cp(appPath, join(staging, basename(appPath)), { recursive: true, verbatimSymlinks: true })
-    await symlink('/Applications', join(staging, 'Applications'))
-    run('hdiutil', ['create', '-volname', appName, '-srcfolder', staging, '-ov', '-format', 'UDZO', '-quiet', dmgPath])
-  } finally {
-    await rm(staging, { recursive: true, force: true })
-  }
-  return dmgPath
+  return createDiskImage({ appPath, volumeName: appName, dmgPath: join(outputDir, `${appName}.dmg`) })
 }
 
 /** Build the bundle named by the flags, and the disk image unless `--no-dmg`. */

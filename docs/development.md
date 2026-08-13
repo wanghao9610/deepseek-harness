@@ -150,6 +150,21 @@ The ACP automation server exposes fresh agent sessions over JSON-RPC stdio and a
 pnpm run demo:acp
 ```
 
+### macOS desktop application
+
+`pnpm run package:desktop` builds the Electron desktop application and `dist-desktop/DeepSeek-Harness-<version>-<arch>.dmg`. Unlike the launcher bundle below, the product is self-contained: it carries the Electron runtime, a deployed harness closure, and the built frontend, so the installed application needs no checkout, Node, or package manager. It builds on macOS only, over a completed `pnpm run build`:
+
+```sh
+pnpm run build
+pnpm run package:desktop
+```
+
+Flags select the target and shorten a rebuild: `--arch <arm64|x64>` (default: this machine), `--out <dir>`, `--no-dmg`, `--skip-deploy` to reuse the closure already in `dist-desktop/runtime`, and `--skip-smoke` to skip booting it.
+
+The pipeline deploys the closure named by the generated `apps/desktop/runtime/package.json`, prunes build-only material and foreign-platform prebuilds, **boots the closure** and reads the page it serves, packs the shell around it, ad-hoc signs the bundle — required on Apple silicon, where packaging invalidates Electron's own signature — and writes the disk image. A failing boot smoke is the pipeline's own report that the closure it was about to ship does not run.
+
+Regenerate the closure manifest with `pnpm run gen-desktop-runtime-closure` (then `pnpm install`) after changing the CLI's dependency graph; `pnpm run hygiene` reports a stale one. Application behavior lives in the [package README](../apps/desktop/README.md), and the design in the [desktop application Agent Note](../.agents/notes/implemented/architecture/2026-08-13-electron-desktop-application.md).
+
 ### macOS application bundle
 
 `pnpm run package:mac` builds `dist-macos/DSH.app`, plus a `dist-macos/DSH.dmg` holding it, so `dsh web` starts from the Dock instead of a terminal. It builds on macOS only, and rejects a checkout that has not completed `pnpm run build`:
