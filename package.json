@@ -135,6 +135,7 @@
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "package:mac": "tsx scripts/package-macos-app.ts",
+    "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows-app.ps1",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
     "demo:cordis": "node scripts/demo-cordis.mjs",
     "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",

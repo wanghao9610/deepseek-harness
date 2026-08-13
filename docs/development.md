@@ -167,6 +167,17 @@ Starting the app serves `dsh web` and opens its URL, and reaching the app again 
 
 Two macOS behaviors govern a rebuilt bundle. LaunchServices resolves an application by bundle id, so a copy installed under `/Applications` answers `open dist-macos/DSH.app` and has to be reinstalled after each rebuild. Raising a browser tab needs one Automation approval per browser under System Settings, and the unsigned executable's identity changes with every rebuild, so macOS asks again.
 
+### Windows launch shortcuts
+
+`scripts\windows\start-web.ps1` starts `dsh web` from a checkout and shows it in a browser app window, and `pnpm run package:win` writes `dist-windows\DSH.lnk` and `dist-windows\Stop DSH.lnk` over it with the checked-in icon. Packaging is a convenience: the launcher runs on its own, and `-Check` prints everything it resolves without starting anything.
+
+```sh
+pnpm run build
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\start-web.ps1 -Check
+```
+
+Windows has no scripting interface for browser tabs, so the launcher asks a Chromium-family browser for a dedicated window (`--app=`) instead of reusing a tab. That window carries its own taskbar button, which is what Alt-Tab reaches; running the launcher again raises it by window title rather than opening a second one. A default browser outside that family gets an ordinary tab and no window reuse. Unlike the macOS bundle the launcher does not stay resident, so `-Stop`, or the stop shortcut, is what ends the server; its output is at `%LOCALAPPDATA%\DSH\web.log`.
+
 ### TODO markers
 
 Use one of three comment tags to flag known issues in the code, ordered by urgency:

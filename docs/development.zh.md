@@ -167,6 +167,17 @@ pnpm run package:mac
 
 有两项 macOS 行为决定重新构建后的应用包如何被使用。LaunchServices 按 bundle id 解析应用，因此安装在 `/Applications` 下的副本会响应 `open dist-macos/DSH.app`，每次重新构建后都必须重新安装。调起浏览器标签页需要在「系统设置」中按浏览器逐个授予「自动化」权限，而未签名可执行文件的身份随每次重新构建而变化，因此 macOS 会再次询问。
 
+### Windows 启动快捷方式
+
+`scripts\windows\start-web.ps1` 从 checkout 启动 `dsh web` 并在浏览器应用窗口中呈现它；`pnpm run package:win` 则在其之上写出 `dist-windows\DSH.lnk` 与 `dist-windows\Stop DSH.lnk`，并带上已提交的图标。打包只是便利手段：该启动器本身即可独立运行，且 `-Check` 会打印它解析出的全部信息而不启动任何东西。
+
+```sh
+pnpm run build
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\start-web.ps1 -Check
+```
+
+Windows 没有面向浏览器标签页的脚本接口，因此该启动器改为向 Chromium 系浏览器申请一个独立窗口（`--app=`），而不是复用标签页。该窗口拥有自己的任务栏按钮，Alt-Tab 切换到的正是它；再次运行启动器会按窗口标题将其调至前台，而不是再开一个。若默认浏览器不属于该家族，则只会得到一个普通标签页，且没有窗口复用。与 macOS 应用包不同，该启动器不常驻，因此要用 `-Stop`（或那个停止快捷方式）来结束服务；其输出位于 `%LOCALAPPDATA%\DSH\web.log`。
+
 ### TODO 标记
 
 请使用以下三种注释标签之一标记代码中的已知问题，按紧急程度排序：
