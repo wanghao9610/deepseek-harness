@@ -150,6 +150,23 @@ ACP 自动化服务器通过 JSON-RPC stdio 提供全新 agent 会话，同样�
 pnpm run demo:acp
 ```
 
+### macOS 应用包
+
+`pnpm run package:mac` 构建 `dist-macos/DSH.app` 以及承载它的 `dist-macos/DSH.dmg`，使 `dsh web` 从 Dock 启动而不是从终端启动。它只在 macOS 上构建，并拒绝尚未完成 `pnpm run build` 的 checkout：
+
+```sh
+pnpm run build
+pnpm run package:mac
+```
+
+以下标志用于选择输出与图案：`--no-dmg`、`--out <dir>`、`--name <AppName>`、`--node <path>`，以及用 `--icon <path.icns|path.png>` 取代默认的[鲸鱼图案](../assets/macos-app-icon.svg)。
+
+该应用包未签名，也不自包含：其启动脚本以构建时解析到的 Node 二进制运行本 checkout 的 `apps/cli/lib/bin.js`，因此移动或删除其中任何一个都会破坏已经构建好的应用包。Gatekeeper 不拦截本机构建的应用包，而经磁盘镜像带到另一台机器的副本需要先执行 `xattr -dr com.apple.quarantine <app>`。
+
+启动该应用会运行 `dsh web` 并打开其 URL：若某个正在运行的 Chromium 系或 Safari 窗口中已有显示该地址的标签页，则将其调至前台而不是再开一个；退出该应用即停止服务。每次运行都写入 `~/Library/Logs/<AppName>/web.log`。应用包的可执行文件是由 `swiftc` 编译的 Cocoa shim，LaunchServices 需要它才会将该应用视为已启动；没有 Swift 编译器时，启动脚本本身成为可执行文件，应用包被标记为 `LSUIElement`，因而完全没有 Dock 图标。
+
+有两项 macOS 行为决定重新构建后的应用包如何被使用。LaunchServices 按 bundle id 解析应用，因此安装在 `/Applications` 下的副本会响应 `open dist-macos/DSH.app`，每次重新构建后都必须重新安装。调起浏览器标签页需要在「系统设置」中按浏览器逐个授予「自动化」权限，而未签名可执行文件的身份随每次重新构建而变化，因此 macOS 会再次询问。
+
 ### TODO 标记
 
 请使用以下三种注释标签之一标记代码中的已知问题，按紧急程度排序：

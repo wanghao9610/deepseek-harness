@@ -150,6 +150,23 @@ The ACP automation server exposes fresh agent sessions over JSON-RPC stdio and a
 pnpm run demo:acp
 ```
 
+### macOS application bundle
+
+`pnpm run package:mac` builds `dist-macos/DSH.app`, plus a `dist-macos/DSH.dmg` holding it, so `dsh web` starts from the Dock instead of a terminal. It builds on macOS only, and rejects a checkout that has not completed `pnpm run build`:
+
+```sh
+pnpm run build
+pnpm run package:mac
+```
+
+Flags select the output and the artwork: `--no-dmg`, `--out <dir>`, `--name <AppName>`, `--node <path>`, and `--icon <path.icns|path.png>` in place of the default [whale artwork](../assets/macos-app-icon.svg).
+
+The bundle is unsigned and not self-contained: its launch script runs this checkout's `apps/cli/lib/bin.js` under the Node binary resolved at build time, so moving or deleting either one breaks a bundle already built. Gatekeeper does not intercept a locally built bundle, while a copy carried to another machine through the disk image first needs `xattr -dr com.apple.quarantine <app>`.
+
+Starting the app serves `dsh web` and opens its URL, raising a tab that already shows it in a running Chromium-family or Safari window instead of adding another, and quitting the app stops the server. Each run writes to `~/Library/Logs/<AppName>/web.log`. The bundle executable is a Cocoa shim compiled by `swiftc`, which LaunchServices requires before it treats the app as launched; without a Swift compiler the launch script becomes the executable and the bundle is marked `LSUIElement`, which has no Dock tile at all.
+
+Two macOS behaviors govern a rebuilt bundle. LaunchServices resolves an application by bundle id, so a copy installed under `/Applications` answers `open dist-macos/DSH.app` and has to be reinstalled after each rebuild. Raising a browser tab needs one Automation approval per browser under System Settings, and the unsigned executable's identity changes with every rebuild, so macOS asks again.
+
 ### TODO markers
 
 Use one of three comment tags to flag known issues in the code, ordered by urgency:
