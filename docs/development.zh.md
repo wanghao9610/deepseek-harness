@@ -163,7 +163,7 @@ pnpm run package:mac
 
 该应用包未签名，也不自包含：其启动脚本以构建时解析到的 Node 二进制运行本 checkout 的 `apps/cli/lib/bin.js`，因此移动或删除其中任何一个都会破坏已经构建好的应用包。Gatekeeper 不拦截本机构建的应用包，而经磁盘镜像带到另一台机器的副本需要先执行 `xattr -dr com.apple.quarantine <app>`。
 
-启动该应用会运行 `dsh web` 并打开其 URL：若某个正在运行的 Chromium 系或 Safari 窗口中已有显示该地址的标签页，则将其调至前台而不是再开一个；退出该应用即停止服务。每次运行都写入 `~/Library/Logs/<AppName>/web.log`。应用包的可执行文件是由 `swiftc` 编译的 Cocoa shim，LaunchServices 需要它才会将该应用视为已启动；没有 Swift 编译器时，启动脚本本身成为可执行文件，应用包被标记为 `LSUIElement`，因而完全没有 Dock 图标。
+启动该应用会运行 `dsh web` 并打开其 URL；此后每次重新触及该应用——点击 Dock 图标、Command-Tab、以及任何其他激活方式——都会把某个正在运行的 Chromium 系或 Safari 窗口中已显示该地址的标签页调至前台，而不是再开一个；退出该应用即停止服务。每次运行都写入 `~/Library/Logs/<AppName>/web.log`。应用包的可执行文件是由 `swiftc` 编译的 Cocoa shim，LaunchServices 需要它才会将该应用视为已启动；没有 Swift 编译器时，启动脚本本身成为可执行文件，应用包被标记为 `LSUIElement`，因而完全没有 Dock 图标。
 
 有两项 macOS 行为决定重新构建后的应用包如何被使用。LaunchServices 按 bundle id 解析应用，因此安装在 `/Applications` 下的副本会响应 `open dist-macos/DSH.app`，每次重新构建后都必须重新安装。调起浏览器标签页需要在「系统设置」中按浏览器逐个授予「自动化」权限，而未签名可执行文件的身份随每次重新构建而变化，因此 macOS 会再次询问。
 

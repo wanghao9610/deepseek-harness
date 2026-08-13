@@ -18,9 +18,15 @@ Nothing inside the bundle is addressed by an absolute path, so the built applica
 
 LaunchServices bounces the Dock tile, and eventually reports a launch timeout, until the bundle executable checks in with the window server — which only a process that starts an `NSApplication` can do, and a shell script never can. The executable is therefore a small Swift Cocoa shim compiled by `swiftc` during packaging, and the bash launch script runs as its child. The shim owns the application's lifetime in both directions: Quit reaches the script's `SIGTERM` trap, which stops the server before the app exits, and the script exiting terminates the app rather than leaving an idle Dock tile. Where no Swift compiler exists the script becomes the executable and the bundle is marked `LSUIElement`, which has no Dock tile to bounce and no Dock icon either.
 
+### Reaching the app raises its tab
+
+An application with no window of its own has nothing to present when the user reaches it, so every route in — a Dock click, Command-Tab, any other activation — runs the launch script in a focus-only mode that raises the browser tab. That mode starts nothing: an activation arrives moments after launch, and starting a server there would race the launch for the port.
+
+What that mode waits for is a readiness marker the launch writes after opening its tab, not the port. The port answers about a second and a half before that tab exists — long enough for an activation to land inside the interval, find no tab, and open a second one. A probe still runs after the marker check, because a killed run leaves its marker behind and the URL under it serves nothing. A single Dock click delivers both the reopen and the activation callback, and the shim suppresses the second while the first is still running, for the same reason: two concurrent runs that find no tab would each open one.
+
 ### Browsers are addressed by bundle id
 
-A Dock click re-runs the launch script, whose already-serving branch raises the tab that displays the app instead of opening another. Browsers are named by bundle id and never by display name: naming an application that is not installed sends AppleScript searching for it and blocks on a chooser dialog, which hung the launcher outright while a listed browser was absent, whereas an absent bundle id fails immediately. Only a browser that is already running is asked, so a Dock click never starts one the user had closed. Chromium-family browsers share one script compiled under `using terms from application "Google Chrome"`; Safari has its own dictionary and its own script.
+Browsers are named by bundle id and never by display name: naming an application that is not installed sends AppleScript searching for it and blocks on a chooser dialog, which hung the launcher outright while a listed browser was absent, whereas an absent bundle id fails immediately. Only a browser that is already running is asked, so a Dock click never starts one the user had closed. Chromium-family browsers share one script compiled under `using terms from application "Google Chrome"`; Safari has its own dictionary and its own script.
 
 ### The baked Node path is a PATH entry
 

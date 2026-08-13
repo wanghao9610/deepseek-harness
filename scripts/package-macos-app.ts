@@ -202,6 +202,7 @@ URL=${shellQuote(DEFAULT_URL)}
 APP=${shellQuote(appName)}
 LOG_DIR="$HOME/Library/Logs/$APP"
 LOG="$LOG_DIR/web.log"
+READY="$LOG_DIR/ready"
 
 alert() {
   /usr/bin/osascript -e "display alert \\"$APP\\" message \\"$1\\" as critical" >/dev/null 2>&1 || true
@@ -230,6 +231,22 @@ focus_or_open() {
   /usr/bin/open "$target"
 }
 
+# The executable runs this mode whenever the user reaches the app, which is
+# also why it starts nothing: an activation arrives moments after launch, and
+# starting a server here would race the one below for the port.
+#
+# The readiness marker, not the port, is what this mode waits for. The port
+# answers more than a second before the launch below opens its tab, and an
+# activation inside that interval would find no tab and open a second one.
+# The probe then rejects a marker that a killed run left behind, which would
+# otherwise point the browser at a URL nothing serves.
+if [ "\${1:-}" = "focus" ]; then
+  [ -f "$READY" ] || exit 0
+  /usr/bin/curl -fsS --max-time 1 -o /dev/null "$URL" || exit 0
+  focus_or_open "$URL"
+  exit 0
+fi
+
 mkdir -p "$LOG_DIR"
 cd "$HOME" || exit 1
 
@@ -250,6 +267,7 @@ if [ ! -f "$ENTRY" ]; then
 fi
 
 : > "$LOG"
+rm -f "$READY"
 "$NODE" "$ENTRY" web >>"$LOG" 2>&1 &
 child=$!
 trap 'kill "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM INT
@@ -273,6 +291,8 @@ if [ -z "$url" ]; then
 fi
 
 focus_or_open "$url"
+# Only now is there a tab for an activation to raise.
+: > "$READY"
 wait "$child"
 `
 }
@@ -367,21 +387,33 @@ function shimSource(): string {
 final class LauncherDelegate: NSObject, NSApplicationDelegate {
   private let script: String
   private var child: Process?
+  private var focusing: Process?
 
   init(script: String) {
     self.script = script
   }
 
-  private func spawn() throws -> Process {
+  private func spawn(_ arguments: [String]) throws -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
-    process.arguments = [script]
+    process.arguments = [script] + arguments
     try process.run()
     return process
   }
 
+  /// Show the running session by raising its browser tab. An app with no
+  /// window of its own has nothing else to present when the user reaches it,
+  /// and every route to it lands here: a Dock click, Command-Tab, and any
+  /// other activation. One click raises both the reopen and the activation
+  /// callback, so an in-flight run suppresses the second — two concurrent
+  /// runs finding no tab would each open one.
+  private func raiseSession() {
+    if let running = focusing, running.isRunning { return }
+    focusing = try? spawn(["focus"])
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
-    guard let process = try? spawn() else {
+    guard let process = try? spawn([]) else {
       NSApp.terminate(nil)
       return
     }
@@ -393,11 +425,13 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate {
     child = process
   }
 
-  /// Clicking the Dock tile re-runs the script, whose already-serving branch
-  /// brings the browser tab forward without starting a second server.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-    _ = try? spawn()
+    raiseSession()
     return true
+  }
+
+  func applicationDidBecomeActive(_ notification: Notification) {
+    raiseSession()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
