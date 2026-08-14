@@ -2535,7 +2535,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
+Source: [`packages/workflow/tool-ralph/src/index.ts:24`](../packages/workflow/tool-ralph/src/index.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 

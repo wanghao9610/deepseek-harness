@@ -298,9 +298,10 @@ Implementations must honor these semantics:
  * @param command - absolute executable path or bare PATH name.
  * @param env - explicit environment entries used for lookup.
  * @param signal - aborts remote or local lookup.
+ * @param cwd - working directory that resolves relative PATH entries; defaults to `process.cwd()`.
  * @returns a canonical executable path.
  */
-abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>
+abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, cwd?: string, ): Promise<string>
 
 /**
  * Start one managed child process from a fully-specified spec; this seam
