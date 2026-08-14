@@ -15,6 +15,8 @@ function searchableJson(value: unknown): string {
   try {
     return JSON.stringify(value)
   } catch {
+    // Only a BigInt or a circular reference stringification throws; such a
+    // cell value cannot be searched, and the index tolerates its absence.
     return ''
   }
 }

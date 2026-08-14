@@ -51,7 +51,10 @@ class BoundedTextBuffer {
     this.value += text
     if (this.maxLines !== undefined) {
       const lines = this.value.split('\n')
-      if (lines.length > this.maxLines) {
+      // A trailing newline splits into a final empty element that is not a
+      // line: counting it trimmed the buffer one line early.
+      const count = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length
+      if (count > this.maxLines) {
         this.value = lines.slice(lines.length - this.maxLines).join('\n')
         this.dropped = true
       }

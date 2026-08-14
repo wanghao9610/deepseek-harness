@@ -34,6 +34,14 @@ describe('MessageDecoder', () => {
     expect(decoder.push(full.subarray(10))).toEqual([{ hello: 'world' }])
   })
 
+  it('reassembles a message arriving byte by byte', () => {
+    const decoder = new MessageDecoder(1_000)
+    const full = frame('{"bytewise":true}')
+    for (let i = 0; i < full.length; i++) {
+      expect(decoder.push(full.subarray(i, i + 1))).toEqual(i === full.length - 1 ? [{ bytewise: true }] : [])
+    }
+  })
+
   it('handles a header split from its body', () => {
     const decoder = new MessageDecoder(1_000)
     const body = '{"x":1}'
