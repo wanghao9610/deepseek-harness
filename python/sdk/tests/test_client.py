@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from deepseek_harness import DeepSeekHarness, HarnessClient, HarnessConfig, Notification, SdkProtocolError
+from deepseek_harness.errors import TransportClosedError
 
 
 def test_high_level_sdk_runs_turn_and_collects_final_response(tmp_path: Path) -> None:
@@ -123,6 +124,100 @@ for line in sys.stdin:
         "maxTokens": 4096,
     }
 
+
+
+
+def test_stdout_crash_trace_surfaces_in_closed_error(tmp_path: Path) -> None:
+    script = tmp_path / "crash_runtime.py"
+    script.write_text(
+        """
+import sys
+
+print("boom: fatal native trace", flush=True)
+sys.exit(3)
+""".strip()
+    )
+
+    client = HarnessClient(
+        HarnessConfig(
+            runtime_bin=sys.executable,
+            launch_args_override=(sys.executable, str(script)),
+            shutdown_timeout_seconds=0.2,
+        )
+    )
+    try:
+        client.start()
+        with pytest.raises(TransportClosedError) as exc_info:
+            client.initialize(cwd=str(tmp_path), provider="p", model="m")
+        # A runtime that crashes onto stdout must not be indistinguishable
+        # from a hang: the trace is kept in the bounded diagnostics tail.
+        assert "boom: fatal native trace" in str(exc_info.value)
+    finally:
+        client.close()
+
+
+def test_restart_clears_queued_close_errors(tmp_path: Path) -> None:
+    script = tmp_path / "crash_runtime.py"
+    script.write_text(
+        """
+import sys
+
+print("crash", flush=True)
+sys.exit(3)
+""".strip()
+    )
+
+    client = HarnessClient(
+        HarnessConfig(
+            runtime_bin=sys.executable,
+            launch_args_override=(sys.executable, str(script)),
+            shutdown_timeout_seconds=0.2,
+        )
+    )
+    try:
+        client.start()
+        with pytest.raises(TransportClosedError):
+            client.initialize(cwd=str(tmp_path), provider="p", model="m")
+        client.close()
+        client.start()
+        # A fresh runtime starts with fresh queues: the previous run's close
+        # errors must not surface to consumers of the new one.
+        assert client._notifications.empty()
+        assert client._requests.empty()
+    finally:
+        client.close()
+
+
+def test_session_run_raises_when_the_turn_never_returns_to_idle(tmp_path: Path) -> None:
+    script = tmp_path / "hang_runtime.py"
+    script.write_text(
+        """
+import json
+import sys
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-runtime"}}}), flush=True)
+    elif method == "session/prompt":
+        params = msg.get("params") or {}
+        print(json.dumps({"jsonrpc": "2.0", "method": "session.event", "params": {"sessionId": params["sessionId"], "event": {"type": "agent/inbox/spliced", "data": {"target": "next-turn", "start": 0, "inserted": [{"id": "message-1"}]}}}}), flush=True)
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"messageId": "message-1"}}), flush=True)
+        # Never emits session.status idle: the turn hangs forever.
+    elif method == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
+        break
+""".strip()
+    )
+
+    with DeepSeekHarness(
+        launch_args_override=(sys.executable, str(script)),
+        cwd=str(tmp_path),
+    ) as harness:
+        session = harness.start_session("main")
+        with pytest.raises(TimeoutError, match="timed out waiting for session main to return to idle"):
+            session.run("never idles", timeout_seconds=0.2)
 
 def test_session_run_invokes_notification_callback_before_returning(tmp_path: Path) -> None:
     script = tmp_path / "fake_runtime.py"
