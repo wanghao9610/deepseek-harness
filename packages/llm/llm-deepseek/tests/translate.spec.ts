@@ -309,6 +309,11 @@ describe('mapUsage', () => {
     expect(mapUsage({ prompt_tokens: 10, completion_tokens: 2 }))
       .toEqual({ inputTokens: 10, outputTokens: 2 })
   })
+
+  it('clamps a cache read above the prompt total to a non-negative uncached count', () => {
+    expect(mapUsage({ prompt_tokens: 5, completion_tokens: 2, prompt_cache_hit_tokens: 8 }))
+      .toEqual({ inputTokens: 0, outputTokens: 2, cacheReadTokens: 8 })
+  })
 })
 
 describe('translate: defensive tool-call branches', () => {

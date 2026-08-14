@@ -508,6 +508,11 @@ describe('toPiContext', () => {
     }
   })
 
+  it('mapStopReason rejects an unknown stop reason instead of returning undefined', () => {
+    expect(() => mapStopReason({ stopReason: 'pause', content: [], model: 'm' } as never))
+      .toThrow(/unknown pi-ai stop reason/)
+  })
+
   it.each([
     ['number state', 1, 'expected an object'],
     ['null state', null, 'expected an object'],
