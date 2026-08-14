@@ -716,6 +716,18 @@ describe('E2BFileSystem atomic writes and edits', () => {
     expect(new TextDecoder().decode(remote.nodes.get('/workspace/file.txt')?.data)).toBe('one\r\nTWO\r\nthree\r\n')
   })
 
+  it('treats $ patterns in the replacement as literal text', async () => {
+    const remote = new FakeRemote()
+    remote.file('/workspace/file.txt', 'cost foo end')
+    const { fs } = await setup(remote)
+    const target = await fs.resolve('file.txt')
+    const outcome = await fs.editText(
+      target,
+      { oldString: 'foo', newString: "$& $1 $$ $` $' x", replaceAll: false },
+    )
+    expect(outcome).toMatchObject({ before: 'cost foo end', after: "cost $& $1 $$ $` $' x end" })
+  })
+
   it('reports stale and literal-match failures with stable codes', async () => {
     const remote = new FakeRemote()
     remote.file('/workspace/file.txt', 'a a')
