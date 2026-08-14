@@ -93,4 +93,5 @@ The Windows and Linux function row is what a menu item cannot carry, since an it
 - The downlink pathnames are restated here because the constants live in a `packages/client` package, which the host TypeScript program deliberately cannot see.
 - The macOS bundle is ad-hoc signed, not notarized: a copy carried to another machine needs `xattr -dr com.apple.quarantine <app>`. The Windows setup is unsigned; SmartScreen will warn.
 - No CI gate covers the application. Packaging needs macOS or Windows, and exercising the shell needs a windowing session; a same-machine packaging run's boot smoke is what proves the closure it ships. A Windows installer built on macOS is unsmoked.
+- The NSIS setup replaces electron-builder's check for a running application with [`build/close-app-processes.nsh`](build/close-app-processes.nsh), because the runtime shares the shell's executable and restarts itself faster than the default check gives up. A macOS build host proves only that the script compiles; the close path needs an upgrade install over a running application on Windows.
 - Closing the last window on Windows quits the application and stops the runtime; on macOS it does not.

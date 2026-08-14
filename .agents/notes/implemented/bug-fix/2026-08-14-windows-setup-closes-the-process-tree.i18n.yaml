@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-14-windows-setup-closes-the-process-tree.md
+2026-08-14-windows-setup-closes-the-process-tree.md: 573a07baace9070d0de4a1462beeec4b3122e3e5
+2026-08-14-windows-setup-closes-the-process-tree.zh.md: 63204e0d6fa5cdf46cdef515365285a50fe74b2c

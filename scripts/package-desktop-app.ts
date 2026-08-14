@@ -20,11 +20,11 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { get as httpGet } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative as relativePath, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { RUNTIME_DIRECTORY, RUNTIME_ENTRY_RELATIVE } from '../apps/desktop/src/paths.ts'
 import { ReadinessScanner } from '../apps/desktop/src/readiness.ts'
@@ -68,6 +68,12 @@ const MAC_ICON = 'assets/macos-app-icon.png'
 /** Windows icon; the filled canvas is committed because packaging has no rasterizer. */
 const WIN_ICON = 'assets/windows-app-icon.ico'
 
+/**
+ * NSIS include that replaces electron-builder's check for a running
+ * application, whose budget and single-process kills this application outlives.
+ */
+const NSIS_CLOSE_APP_INCLUDE = `${DESKTOP_DIR}/build/close-app-processes.nsh`
+
 /** Oldest macOS the bundle declares support for, matching the browser launcher. */
 const MINIMUM_SYSTEM_VERSION = '13.0'
 
@@ -92,6 +98,49 @@ const PRUNE_PATHS = [
   'node_modules/node-pty/third_party',
   'node_modules/node-pty/binding.gyp',
 ]
+
+/**
+ * Filename suffixes nothing in the closure can load.
+ *
+ * The closure ships no TypeScript toolchain, so declarations and sources are
+ * build material: Node never reads the `types` export condition, and the
+ * windows-acl runner reaches its source through `tsx` only when the built
+ * `lib/runner.js` is absent, which packaging always provides. Source maps go
+ * with them because the sources they point at are gone.
+ *
+ * Windows installs are paced by per-file work — extraction, and the
+ * on-access scan of each written file — far more than by total bytes, so
+ * removing files matters even where they are individually small.
+ */
+const PRUNE_SUFFIXES = ['.map', '.ts', '.mts', '.cts']
+
+/**
+ * Documentation stems, matched case-insensitively against a Markdown file's
+ * name before its extension, either whole or before a `.`, `-`, or `_`.
+ *
+ * Markdown outside this list stays: skills and badge bodies are runtime data
+ * the harness reads out of the closure, not documentation.
+ */
+const PRUNE_DOC_STEMS = [
+  'readme',
+  'changelog',
+  'history',
+  'contributing',
+  'security',
+  'code_of_conduct',
+  'upgrading',
+  'migration',
+  'governance',
+  'authors',
+  'notice',
+]
+
+/**
+ * Directory names whose subtrees hold runtime data, exempt from documentation
+ * pruning. The skill loader reads every `.md` under a skill directory, so a
+ * documentation stem there names a skill rather than a document.
+ */
+const RUNTIME_DATA_DIRECTORIES = ['config', 'assets']
 
 /**
  * Narrow a raw `--arch` value.
@@ -298,6 +347,19 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
 }
 
 /**
+ * Number of files in a directory tree, which is what paces a Windows install.
+ * @param directory - the tree to count.
+ * @returns its file count.
+ */
+async function treeFileCount(directory: string): Promise<number> {
+  let total = 0
+  for (const entry of await readdir(directory, { withFileTypes: true, recursive: true })) {
+    if (entry.isFile()) total += 1
+  }
+  return total
+}
+
+/**
  * Total size of a directory tree.
  * @param directory - the tree to measure.
  * @returns its size in bytes.
@@ -316,6 +378,44 @@ async function treeSize(directory: string): Promise<number> {
 }
 
 /**
+ * Whether one Markdown file is documentation rather than runtime data.
+ * @param name - the file's basename.
+ * @param directory - the absolute directory holding it.
+ * @param staging - the deployed closure, which bounds the directory walk.
+ * @returns true when the file is documentation and can be dropped.
+ */
+function isPrunableDocument(name: string, directory: string, staging: string): boolean {
+  const lowered = name.toLowerCase()
+  if (!lowered.endsWith('.md')) return false
+  const stem = lowered.slice(0, -'.md'.length)
+  const isDocumentStem = PRUNE_DOC_STEMS.some(doc =>
+    stem === doc || doc.length < stem.length && stem.startsWith(doc) && '.-_'.includes(stem[doc.length] ?? ''))
+  if (!isDocumentStem) return false
+  const inside = relativePath(staging, directory)
+  return !inside.split(sep).some(segment => RUNTIME_DATA_DIRECTORIES.includes(segment))
+}
+
+/**
+ * Remove every empty directory under one tree, deepest first so a directory
+ * emptied by its own children goes in the same pass.
+ * @param root - the tree to compact.
+ */
+async function removeEmptyDirectories(root: string): Promise<void> {
+  const directories: string[] = []
+  for (const entry of await readdir(root, { withFileTypes: true, recursive: true })) {
+    if (entry.isDirectory()) directories.push(join(entry.parentPath, entry.name))
+  }
+  directories.sort((left, right) => right.split(sep).length - left.split(sep).length)
+  for (const directory of directories) {
+    try {
+      await rmdir(directory)
+    } catch {
+      // The directory still holds something, so it stays; nothing else removes directories here.
+    }
+  }
+}
+
+/**
  * Remove the build-only material and every foreign-platform native prebuild
  * from the deployed closure.
  * @param staging - the deployed closure.
@@ -324,6 +424,7 @@ async function treeSize(directory: string): Promise<number> {
  */
 async function pruneClosure(staging: string, platform: Platform, arch: Arch): Promise<void> {
   const before = await treeSize(staging)
+  const beforeFiles = await treeFileCount(staging)
   for (const relative of PRUNE_PATHS) await rm(join(staging, relative), { recursive: true, force: true })
   const prebuilds = join(staging, 'node_modules/node-pty/prebuilds')
   if (existsSync(prebuilds)) {
@@ -333,10 +434,16 @@ async function pruneClosure(staging: string, platform: Platform, arch: Arch): Pr
     }
   }
   for (const entry of await readdir(staging, { withFileTypes: true, recursive: true })) {
-    if (entry.isFile() && entry.name.endsWith('.map')) await rm(join(entry.parentPath, entry.name), { force: true })
+    if (!entry.isFile()) continue
+    const prunable = PRUNE_SUFFIXES.some(suffix => entry.name.endsWith(suffix))
+      || isPrunableDocument(entry.name, entry.parentPath, staging)
+    if (prunable) await rm(join(entry.parentPath, entry.name), { force: true })
   }
+  await removeEmptyDirectories(staging)
   const after = await treeSize(staging)
+  const afterFiles = await treeFileCount(staging)
   console.log(`${PREFIX}: pruned the closure from ${formatMib(before)} to ${formatMib(after)}`)
+  console.log(`${PREFIX}: pruned the closure from ${String(beforeFiles)} to ${String(afterFiles)} files`)
 }
 
 /**
@@ -555,6 +662,7 @@ function builderConfigObject(
       createStartMenuShortcut: true,
       shortcutName: PRODUCT_NAME,
       artifactName: `${PRODUCT_SLUG}-\${version}-\${arch}-setup.\${ext}`,
+      include: join(root, NSIS_CLOSE_APP_INCLUDE),
     },
   }
 }
@@ -600,6 +708,9 @@ async function main(): Promise<void> {
 
   for (const artifact of REQUIRED_ARTIFACTS) {
     if (!existsSync(join(root, artifact))) throw new Error(`${PREFIX}: missing ${artifact} — run 'pnpm run build' first.`)
+  }
+  if (platform === 'win' && !existsSync(join(root, NSIS_CLOSE_APP_INCLUDE))) {
+    throw new Error(`${PREFIX}: missing ${NSIS_CLOSE_APP_INCLUDE}, which the NSIS setup needs to close a running application.`)
   }
   await assertShellBundleCurrent()
 

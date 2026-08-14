@@ -93,4 +93,5 @@ Windows 与 Linux 的功能键一行是菜单项无法承载的：一项只持�
 - 下行通道的路径名在此重述，因为其常量位于 `packages/client` 包中，而 host 侧 TypeScript 程序有意看不到它。
 - 该 macOS 包是即席（ad-hoc）签名而非公证：拷贝到另一台机器时需要 `xattr -dr com.apple.quarantine <app>`。Windows 安装程序未签名；SmartScreen 会警告。
 - 没有 CI 门禁覆盖该应用。打包需要 macOS 或 Windows，驱动外壳需要窗口会话；本机打包运行自身的引导冒烟测试才是它所交付闭包的证明。在 macOS 上构建的 Windows 安装程序未经冒烟。
+- NSIS 安装程序用 [`build/close-app-processes.nsh`](build/close-app-processes.nsh) 替换 electron-builder 对"应用是否在运行"的检测，因为运行时与外壳共用可执行文件，且它重启自身的速度快过默认检测放弃的速度。macOS 构建主机只能证明该脚本可以编译；关闭路径需要在 Windows 上对一个正在运行的应用做一次覆盖安装来验证。
 - 在 Windows 上关闭最后一个窗口会退出应用并停止运行时；在 macOS 上不会。
