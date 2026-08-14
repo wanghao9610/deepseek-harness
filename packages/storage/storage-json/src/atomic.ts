@@ -16,10 +16,26 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 /**
+ * Thrown when the rename committed but the parent directory could not be
+ * fsynced: the new value IS in place (memory and disk agree), only the
+ * crash-durability of the directory entry is unproven. Callers must not roll
+ * authoritative state back on this error.
+ */
+export class JsonWriteCommittedError extends Error {
+  /** @param cause - the directory-fsync failure. */
+  constructor(cause: unknown) {
+    super('committed JSON unit write is not crash-durable', { cause })
+    this.name = 'JsonWriteCommittedError'
+  }
+}
+
+/**
  * Durably replace `path` with `data`.
  * @param path - Absolute target file path.
  * @param data - Full new file content.
- * @returns resolution after the replacement is crash-durable.
+ * @returns resolution after the replacement is crash-durable; a directory-fsync
+ * failure rejects with {@link JsonWriteCommittedError} after the rename already
+ * committed (the value is in place, its durability unproven).
  */
 export async function writeAtomic(path: string, data: string): Promise<void> {
   const tmp = join(dirname(path), `.${randomUUID()}.tmp`)
@@ -32,7 +48,11 @@ export async function writeAtomic(path: string, data: string): Promise<void> {
       await handle.close()
     }
     await rename(tmp, path)
-    await fsyncDirectory(dirname(path))
+    try {
+      await fsyncDirectory(dirname(path))
+    } catch (error) {
+      throw new JsonWriteCommittedError(error)
+    }
   } catch (error) {
     await rm(tmp, { force: true })
     throw error

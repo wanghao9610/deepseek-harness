@@ -10,7 +10,7 @@
 import { readFile } from 'node:fs/promises'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type { KvUnit, KvUnitDescriptor } from '@deepseek-ai/dsh-storage'
-import { writeAtomic } from './atomic.ts'
+import { JsonWriteCommittedError, writeAtomic } from './atomic.ts'
 import { parse, serialize } from './format.ts'
 import type { UnitState } from './format.ts'
 
@@ -74,7 +74,10 @@ class JsonKvUnit implements KvUnit {
     records.set(key, value)
     // Roll back on a failed publish: memory is authoritative, so a rejected
     // write must not survive in memory (or ride along with the next publish).
+    // A committed write whose directory fsync failed is already on disk;
+    // rolling memory back would diverge the authoritative state from the file.
     await this.publish().catch((error: unknown) => {
+      if (error instanceof JsonWriteCommittedError) throw error
       if (hadKey) records.set(key, previous)
       else records.delete(key)
       throw error
@@ -88,6 +91,7 @@ class JsonKvUnit implements KvUnit {
     const previous = records.get(key)
     records.delete(key)
     await this.publish().catch((error: unknown) => {
+      if (error instanceof JsonWriteCommittedError) throw error
       records.set(key, previous)
       throw error
     })
@@ -101,6 +105,7 @@ class JsonKvUnit implements KvUnit {
     const previous = this.state.global
     this.state.global = value
     await this.publish().catch((error: unknown) => {
+      if (error instanceof JsonWriteCommittedError) throw error
       this.state.global = previous
       throw error
     })
