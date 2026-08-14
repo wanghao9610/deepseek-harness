@@ -100,6 +100,38 @@ describe('Agent.cancel()', () => {
     expect(adapter.requests).toHaveLength(1)
   })
 
+  it('cancel({ keepInbox: true }) at the turn seam parks the queued turn instead of losing the latch', async () => {
+    const adapter = new MockAdapter([
+      textResponse('first reply'),
+      textResponse('wake reply'),
+    ])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('seam-cancel'), { provider: 'mock', model: 'mock' })
+
+    // A turn/end observer cancels synchronously inside the append — the
+    // controller replacement at the seam must carry that latch over.
+    const off = ctx.on('session/event', (session, event) => {
+      if (event.type === 'turn/end' && session.id === agent.id) {
+        agent.cancel({ kind: 'user' }, { keepInbox: true })
+      }
+    })
+
+    send(agent, 'first')
+    send(agent, 'queued')
+    await agent.whenIdle()
+
+    expect(userTexts(agent)).toEqual(['first'])
+    expect(adapter.requests).toHaveLength(1)
+    expect(agent.inbox.nextTurn).toHaveLength(1)
+
+    off()
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'wake it')
+    await idle
+    expect(userTexts(agent)).toEqual(['first', 'queued', 'wake it'])
+    expect(adapter.requests).toHaveLength(3)
+  })
+
   it('cancel({ keepInbox: true }) parks queued work after an active turn aborts', async () => {
     const adapter = new MockAdapter([
       'hang',

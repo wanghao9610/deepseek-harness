@@ -322,7 +322,14 @@ export class ReactLoopAgent implements Agent {
       }
     }
     if (!this.inbox.hasPending) return false
+    // A cancel with keepInbox can land synchronously inside the turn/end
+    // append above (a session observer's call): carry its latch across the
+    // controller replacement so the queued work stays parked until a fresh
+    // wake, exactly like a cancel that lands mid-turn.
+    const aborted = phase.abort.signal.aborted
+    const reason = phase.abort.signal.reason
     phase.abort = new AbortController()
+    if (aborted) phase.abort.abort(reason)
     // A fresh controller makes a latch set on the old one stale: the live driver claims the queue itself.
     phase.wakeRequested = false
     phase.step = 0
