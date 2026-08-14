@@ -64,6 +64,23 @@ async function listingServer(behavior: {
   return { url: `http://127.0.0.1:${address.port}`, paths, headers }
 }
 
+/** A stand-in that answers every request with a 302 to `target`. */
+async function redirectServer(target: string): Promise<ListingServer> {
+  const paths: string[] = []
+  const headers: IncomingMessage['headers'][] = []
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    paths.push(request.url ?? '')
+    headers.push(request.headers)
+    response.writeHead(302, { location: target })
+    response.end()
+  })
+  servers.push(server)
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('no port')
+  return { url: 'http://127.0.0.1:' + String(address.port), paths, headers }
+}
+
 /** A bare dormant mount: discovery is offered whether or not a route exists. */
 async function harness(): Promise<Context> {
   const ctx = new Context()
@@ -144,6 +161,33 @@ describe('draft-provider model discovery', () => {
     await ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url })
 
     expect(server.headers[0]?.authorization).toBeUndefined()
+  })
+
+  it('never follows a redirect with the stored credential', async () => {
+    const target = await listingServer({ body: JSON.stringify({ data: [{ id: 'stolen' }] }) })
+    const redirector = await redirectServer(target.url + '/stolen')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    process.env['ACME_GATEWAY_KEY'] = 'stored-key'
+    touchedEnv.push('ACME_GATEWAY_KEY')
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'ACME_GATEWAY_KEY',
+          api: 'openai-completions',
+          baseURL: redirector.url,
+          models: [{ id: 'acme-large' }],
+        },
+      },
+    })
+
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'acme-gateway', baseURL: redirector.url }))
+      .rejects.toThrow(/could not reach/)
+
+    // The credentialed GET was sent to the configured endpoint and stopped
+    // there: the redirect target never saw a request, let alone the key.
+    expect(redirector.paths).toEqual(['/models'])
+    expect(target.paths).toEqual([])
   })
 
   it('authenticates a configured route the draft cannot supply a key for', async () => {
