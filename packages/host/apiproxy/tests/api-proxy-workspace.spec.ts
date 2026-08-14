@@ -142,10 +142,14 @@ describe('host.pickDirectory', () => {
     expect((await pending).result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
   })
 
-  it('folds a non-abort native-chooser failure into an internal error', async () => {
+  // The cause verbatim: every Consumer names the failing operation itself, so
+  // a prefix here reaches the user doubled ("directory picker failed:
+  // directory picker failed: ...") and pushes the part that explains anything
+  // out of the space a dialog gives it.
+  it('folds a non-abort native-chooser failure into an internal error carrying the cause alone', async () => {
     const { api } = await harness(undefined, { kind: 'native', pick: async () => { throw new Error('no chooser installed') } })
     const response = await api.host.pickDirectory(request({}), new AbortController().signal)
-    expect(response.result).toMatchObject({ ok: false, error: { code: 'internal' } })
+    expect(response.result).toMatchObject({ ok: false, error: { code: 'internal', message: 'no chooser installed' } })
   })
 
   it('refuses the native RPC under a browse composition', async () => {

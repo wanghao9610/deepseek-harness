@@ -2958,9 +2958,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               details: {},
             })
           }
+          // The cause alone: every Consumer names the failing operation
+          // itself, and this response is already the answer to one request.
           return err(request, {
             code: 'internal',
-            message: `directory picker failed: ${error instanceof Error ? error.message : String(error)}`,
+            message: error instanceof Error ? error.message : String(error),
             details: {},
           })
         }

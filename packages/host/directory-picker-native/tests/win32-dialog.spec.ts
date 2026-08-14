@@ -7,14 +7,27 @@
  */
 
 import { EventEmitter } from 'node:events'
+import { Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { pickWin32Directory, type Win32DialogInternals, type Win32DialogWorkerLike } from '../src/win32-dialog.ts'
 import type { Win32DialogWorkerMessage } from '../src/win32-dialog-worker.ts'
 
 class FakeWorker extends EventEmitter implements Win32DialogWorkerLike {
   kill = vi.fn(() => true)
+  readonly stderr: Readable | null
+
+  constructor(stderr: Readable | null = null) {
+    super()
+    this.stderr = stderr
+  }
+
   post(message: Win32DialogWorkerMessage): void {
     this.emit('message', message)
+  }
+
+  /** End the worker the way `node:child_process` does once its pipes are closed. */
+  close(code: number | null = 0, signal: NodeJS.Signals | null = null): void {
+    this.emit('close', code, signal)
   }
 }
 
@@ -24,8 +37,8 @@ interface Harness {
   close: ReturnType<typeof vi.fn>
 }
 
-function harness(overrides: Partial<Win32DialogInternals> = {}): Harness {
-  const worker = new FakeWorker()
+function harness(overrides: Partial<Win32DialogInternals> = {}, stderr: Readable | null = null): Harness {
+  const worker = new FakeWorker(stderr)
   const close = vi.fn(async () => undefined)
   return {
     worker,
@@ -69,15 +82,47 @@ describe('pickWin32Directory', () => {
 
     const silent = harness()
     const exiting = pickWin32Directory(live(), silent.internals)
-    silent.worker.emit('exit', 0)
-    await expect(exiting).rejects.toThrow('exited before reporting a result')
+    silent.worker.close(0)
+    await expect(exiting).rejects.toThrow('exited before reporting a result (exit code 0)')
   })
 
-  it('settles once: a late exit after the result is inert', async () => {
+  // A worker that dies before posting leaves its account on stderr alone, so
+  // the rejection has to carry both that and the ending itself: a native
+  // fault reports neither a message nor a POSIX exit code.
+  it('reports the ending and the retained standard error of a silent exit', async () => {
+    // Not object mode: the real stderr is a byte stream the driver decodes,
+    // and a chunk boundary inside the account must not lose any of it.
+    const loud = harness({}, Readable.from(['Error: Cannot find module ', "'koffi'\n"], { objectMode: false }))
+    const failing = pickWin32Directory(live(), loud.internals)
+    await vi.waitFor(() => {
+      expect(loud.worker.stderr?.readableEnded).toBe(true)
+    })
+    loud.worker.close(1)
+    await expect(failing).rejects.toThrow("(exit code 1): Error: Cannot find module 'koffi'")
+
+    const faulting = harness()
+    const crashed = pickWin32Directory(live(), faulting.internals)
+    faulting.worker.close(3221225477)
+    await expect(crashed).rejects.toThrow('(exit code 3221225477 (0xc0000005))')
+
+    const signalled = harness()
+    const killed = pickWin32Directory(live(), signalled.internals)
+    signalled.worker.close(null, 'SIGKILL')
+    await expect(killed).rejects.toThrow('(signal SIGKILL)')
+
+    // `child_process` types both halves as nullable, so the rejection names
+    // an ending even for the pair that carries neither.
+    const mute = harness()
+    const unexplained = pickWin32Directory(live(), mute.internals)
+    mute.worker.close(null, null)
+    await expect(unexplained).rejects.toThrow('(signal unknown)')
+  })
+
+  it('settles once: a late close after the result is inert', async () => {
     const { worker, internals } = harness()
     const picked = pickWin32Directory(live(), internals)
     worker.post({ kind: 'done', path: 'C:\\once' })
-    worker.emit('exit', 0)
+    worker.close(0)
     await expect(picked).resolves.toBe('C:\\once')
   })
 

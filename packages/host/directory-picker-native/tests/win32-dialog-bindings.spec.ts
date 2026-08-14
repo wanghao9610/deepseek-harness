@@ -180,6 +180,17 @@ describe('loadWin32DialogBindings over the fake COM world', () => {
     expect(world.uninitialized).toBe(1)
   })
 
+  // The COM string ends at a zero code UNIT. A character whose code point is
+  // a multiple of 0x100 carries a zero low byte — U+4E00 一 and U+2000 among
+  // them — and a byte-wise scan would return the path cut at that character,
+  // handing the caller a directory that is not the one the user chose.
+  it('reads a path through a character whose low byte is zero', async () => {
+    const world = comWorld({ path: 'C:\\项目一号\\src' })
+    installFakeKoffi(world)
+    const bindings = await (await loadBindingsModule()).loadWin32DialogBindings()
+    expect(runFolderDialog(bindings, 'Pick', vi.fn())).toBe('C:\\项目一号\\src')
+  })
+
   it('maps dismissal and the S_FALSE CoInitializeEx', async () => {
     const world = comWorld({ showHr: HRESULT_CANCELLED, coInitHr: 1 })
     installFakeKoffi(world)

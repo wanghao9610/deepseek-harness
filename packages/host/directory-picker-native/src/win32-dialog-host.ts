@@ -17,12 +17,18 @@ import type { Win32DialogWorkerData } from './win32-dialog-worker.ts'
  * bootstrap tsx first, mirroring the dsh CLI's source launch. The dialog is
  * the child's first window, so Windows activates it without a foreground
  * call.
+ *
+ * Standard error is piped rather than inherited: a child that dies before
+ * posting says why there and nowhere else, and the driver has to reach that
+ * account to put it in the rejection. An inherited stream reaches the host's
+ * own stderr instead, which in a packaged application is a log file no user
+ * reads and no error message quotes.
  * @param data - the child payload (dialog title).
  * @returns the spawned child process.
  */
 export function spawnDialogWorker(data: Win32DialogWorkerData): ReturnType<typeof spawn> {
   const env = { ...process.env, DSH_DIALOG_TITLE: data.title }
-  const stdio: StdioOptions = ['ignore', 'inherit', 'inherit', 'ipc']
+  const stdio: StdioOptions = ['ignore', 'inherit', 'pipe', 'ipc']
   /* v8 ignore next 3 -- the built-output arm: tests always run unbuilt (src/) */
   if (!import.meta.url.endsWith('.ts')) {
     return spawn(process.execPath, [fileURLToPath(new URL('./worker.cjs', import.meta.url))], { env, stdio, windowsHide: true })
