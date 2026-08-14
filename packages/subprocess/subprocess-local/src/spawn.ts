@@ -539,5 +539,6 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     terminate,
     terminateForHostExit,
     waitForExit,
+    treeAlive,
   }
 }

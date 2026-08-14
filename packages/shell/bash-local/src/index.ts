@@ -308,7 +308,10 @@ export class LocalBashExecutor extends ShellExecutor {
         }
       },
       kill: (): boolean => {
-        if (proc.status !== 'running') return false
+        // A completed leader can leave live descendants holding its pipes:
+        // the handle stays killable until the whole tree is gone (a naturally
+        // dead tree still reports false, so a no-op kill stays observable).
+        if (proc.status === 'killed' || !running.treeAlive()) return false
         proc.status = 'killed'
         running.terminate()
         return true
