@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -134,10 +135,22 @@ class Session:
         input: str | list[JsonObject],
         *,
         on_notification: Callable[[Notification], None] | None = None,
+        timeout_seconds: float | None = None,
     ) -> RunResult:
+        """Run one prompt to completion.
+
+        Args:
+            input: The prompt text or raw content blocks.
+            on_notification: Optional observer for every notification the turn
+                produces.
+            timeout_seconds: Optional bound on the whole wait for the turn to
+                return to idle; exceeding it raises ``TimeoutError`` instead
+                of blocking forever on a hung turn.
+        """
         content_blocks = normalize_input(input)
         notifications: list[Notification] = []
         events: list[JsonObject] = []
+        deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
 
         def collect(notification: Notification) -> None:
             notifications.append(notification)
@@ -160,7 +173,13 @@ class Session:
 
             received = False
             while True:
-                notification = subscription.next()
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise TimeoutError(f"timed out waiting for session {self.id} to return to idle")
+                try:
+                    notification = subscription.next(remaining)
+                except TimeoutError:
+                    raise TimeoutError(f"timed out waiting for session {self.id} to return to idle") from None
                 if not received:
                     if not _is_inbox_receipt(notification, self.id, message_id):
                         continue

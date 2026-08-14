@@ -65,6 +65,10 @@ class HarnessClient:
             return
         with self._lock:
             self._session_parents.clear()
+        # A restart begins a fresh runtime: stale close errors queued by the
+        # previous run must not surface to consumers of the new one.
+        self._drain_queue(self._notifications)
+        self._drain_queue(self._requests)
         args = list(self.config.launch_args_override or self._default_launch_args())
         env = os.environ.copy()
         if self.config.env:
@@ -326,12 +330,21 @@ class HarnessClient:
                 try:
                     message = json.loads(line)
                 except json.JSONDecodeError:
+                    # A crash trace or stray log line on stdout is the only
+                    # evidence of protocol drift; keep it in the bounded
+                    # diagnostics tail instead of dropping it silently.
+                    self._stderr_lines.append(f"[stdout, not JSON] {line.rstrip()}")
                     continue
                 self._handle_message(message)
         except BaseException as exc:
-            self._fail_waiters(exc)
+            # Fail the waiters only while this run still owns the instance:
+            # after close() -> start(), a stale thread must not touch the new
+            # process's pending state.
+            if self._proc is proc:
+                self._fail_waiters(exc)
         finally:
-            self._fail_waiters(self._runtime_closed_error("DeepSeek Harness runtime stdout closed"))
+            if self._proc is proc:
+                self._fail_waiters(self._runtime_closed_error("DeepSeek Harness runtime stdout closed"))
 
     def _stderr_loop(self) -> None:
         proc = self._proc
@@ -342,6 +355,7 @@ class HarnessClient:
 
     def _handle_message(self, message: object) -> None:
         if not isinstance(message, dict):
+            self._stderr_lines.append(f"[stdout, unexpected message] {message!r}")
             return
         msg_id = message.get("id")
         method = message.get("method")
@@ -353,6 +367,9 @@ class HarnessClient:
             with self._lock:
                 waiter = self._responses.pop(str(msg_id), None)
             if waiter is None:
+                # A response for an id this client never sent (or already
+                # timed out) is protocol drift worth diagnosing.
+                self._stderr_lines.append(f"[stdout, response for unknown id] {msg_id!r}")
                 return
             if isinstance(message.get("error"), dict):
                 err = message["error"]
@@ -395,6 +412,14 @@ class HarnessClient:
             subscriber.put(exc)
         self._notifications.put(exc)
         self._requests.put(exc)
+
+    @staticmethod
+    def _drain_queue(target: queue.Queue[object]) -> None:
+        while True:
+            try:
+                target.get_nowait()
+            except queue.Empty:
+                return
 
     def _runtime_closed_error(self, reason: str) -> TransportClosedError:
         diagnostics = self._runtime_diagnostics()
@@ -528,8 +553,17 @@ class NotificationSubscription:
         self._closed = True
         self._client._unsubscribe_notifications(self._subscription_id)
 
-    def next(self) -> Notification:
-        item = self._notifications.get()
+    def next(self, timeout_seconds: float | None = None) -> Notification:
+        """Return the next matching notification.
+
+        Args:
+            timeout_seconds: Optional bound on the wait; exceeding it raises
+                ``TimeoutError`` instead of blocking forever.
+        """
+        try:
+            item = self._notifications.get(timeout=timeout_seconds)
+        except queue.Empty:
+            raise TimeoutError("timed out waiting for a notification from the DeepSeek Harness runtime") from None
         if isinstance(item, BaseException):
             raise item
         return item
