@@ -243,6 +243,10 @@ export async function discoverModels(
   try {
     response = await fetch(url, {
       method: 'GET',
+      // Reject redirects on credential-bearing requests (packages/web policy):
+      // following a 3xx would forward the Authorization header to whatever
+      // origin the redirect names.
+      redirect: 'error',
       headers: {
         accept: 'application/json',
         ...apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` },
