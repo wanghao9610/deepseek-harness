@@ -61,7 +61,7 @@ describe('copyComposition race handling', () => {
       (err: unknown) => err,
     )
 
-    expect(String((error as Error).message)).toContain('source missing')
+    expect((error as Error).message).toContain('source missing')
     await expect(readdir(join(root, 'fresh'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

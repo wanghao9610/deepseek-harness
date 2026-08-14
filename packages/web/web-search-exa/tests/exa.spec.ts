@@ -174,7 +174,7 @@ describe('ExaSearchProvider error handling', () => {
     const controller = new AbortController()
     controller.abort(new Error('tool deadline'))
     // undici rejects fetch with the signal's reason; the reason is not a DOMException.
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.reject((init.signal as AbortSignal).reason)))
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.reject((init.signal as AbortSignal).reason as Error)))
     await expect(new ExaSearchProvider(options).search({ query: 'q' }, controller.signal))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
   })
