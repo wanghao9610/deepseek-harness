@@ -101,12 +101,13 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
             },
           },
           totalLines: { type: 'integer', required: true },
+          truncatedByBytes: { type: 'boolean', description: 'True when the byte cap cut the selected lines.' },
         },
       },
-      render: (args, value) => {
-        const input = parseReadArgs(args, caps.limit)
-        const endLine = value.lines.at(-1)?.number ?? Math.max(0, value.offset - 1)
-        const truncatedByBytes = value.lines.length < input.limit && endLine < value.totalLines
+      render: (_args, value) => {
+        // The authoritative accumulator flag: re-deriving from line counts
+        // misses a byte cap that trips exactly at the line limit.
+        const truncatedByBytes = value.truncatedByBytes === true
         return [{
           type: 'text',
           text: formatReadOutput(value.path, {
@@ -155,6 +156,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
         offset: input.offset,
         lines: window.lines,
         totalLines: window.totalLines,
+        ...window.truncatedByBytes ? { truncatedByBytes: true } : {},
       }
       // Record the present observation (a no-op when no policy plugin listens). The
       // read already succeeded; an fs/observed listener is contractually a
