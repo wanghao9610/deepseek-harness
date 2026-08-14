@@ -370,6 +370,31 @@ describe('SessionTelemetryCoordinator adoption', () => {
     expect(backend.ledger()).toHaveLength(2)
   })
 
+  it('re-delivers a stream-started chunk whose first emit failed', async () => {
+    const backend = new FakeBackend()
+    const { ctx, fiber } = await setup(backend)
+    const session = liveSession(ctx, 'chunk-retry')
+    session.append('turn/start', { turn: 1 })
+    backend.rejectSeq = 1 // the first chunk's seq
+    session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'first' } })
+    // Only the turn/start landed: the rejected chunk stayed unseen.
+    expect(backend.ledger()).toHaveLength(1)
+    backend.rejectSeq = undefined
+    await fiber.dispose()
+
+    // Re-adoption re-hands the withheld chunk — the stream-started signal is
+    // not lost permanently.
+    const second = new FakeBackend()
+    await ctx.plugin({
+      name: 'fake-telemetry-2',
+      inject: ['sessions'],
+      apply: (inner: Context) => void new SessionTelemetryCoordinator(inner, second),
+    })
+    // The cursor sat at the delivered turn/start (seq 0); re-adoption
+    // re-hands only the withheld chunk.
+    expect(second.ledger().map(r => r.attributes['event.type'])).toEqual(['assistant/chunk'])
+  })
+
   it('resumes from the handoff cursor across a reload, re-dropping mid-step chunks', async () => {
     const backend = new FakeBackend()
     const { ctx, fiber } = await setup(backend)

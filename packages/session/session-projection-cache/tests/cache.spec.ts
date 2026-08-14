@@ -200,6 +200,26 @@ describe('SessionProjectionCache write policy', () => {
     expect(storedRows(pool, armed.id)).toBeUndefined()
   })
 
+  it('keeps dirty bookkeeping across a failed write so the count threshold alone retries', async () => {
+    const { ctx, pool } = await harness({ config: { writeEveryEvents: 1, writeIntervalMs: 60_000 } })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const session = ctx.sessions.create(SessionId('retry-threshold'))
+    mark(session, ['x'])
+    await settle()
+    expect(storedRows(pool, session.id)?.['cache-test/marks']?.val).toEqual({ marks: ['x'] })
+    // The mandatory write fails; the dirty counter must survive it.
+    pool.failNextWrites = 1
+    endTurn(session)
+    await settle()
+    expect(storedRows(pool, session.id)?.['cache-test/marks']?.val).toEqual({ marks: ['x'] })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('turn/end write for "retry-threshold" failed'))
+    // One more event crosses the count threshold and retries the write —
+    // no mandatory point needed.
+    mark(session, ['y'])
+    await settle()
+    expect(storedRows(pool, session.id)?.['cache-test/marks']?.val).toEqual({ marks: ['y'] })
+  })
+
   it('contains a durable write failure: logs a warning, event path unharmed, next write self-heals', async () => {
     const { ctx, pool } = await harness()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
