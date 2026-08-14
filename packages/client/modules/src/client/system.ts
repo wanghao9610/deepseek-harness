@@ -35,13 +35,16 @@ const stripClientSuffix = (spec: string): string =>
 
 /**
  * Claim and inventory the <style> tags a factory injected during
- * materialization: preset-emitted tags arrive pre-tagged with data-plugin;
- * any untagged tag is claimed for the materializing plugin (HMR bookkeeping).
+ * materialization: preset-emitted tags arrive pre-tagged with data-plugin,
+ * and untagged tags that appeared DURING the factory run are claimed for the
+ * materializing plugin (HMR bookkeeping). A tag that was already untagged
+ * before materialization (the shell's own sheet) is left unclaimed so the
+ * plugin's later HMR teardown cannot remove it.
  */
-const claimStyles = (id: string): string[] => {
+const claimStyles = (id: string, preExisting: ReadonlySet<Element>): string[] => {
   if (typeof document === 'undefined') return []
   for (const el of document.querySelectorAll('style:not([data-plugin])')) {
-    el.setAttribute('data-plugin', id)
+    if (!preExisting.has(el)) el.setAttribute('data-plugin', id)
   }
   const owned: string[] = []
   for (const el of document.querySelectorAll(`style[data-plugin=${JSON.stringify(id)}]`)) {
@@ -122,9 +125,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
     }
     this.materializing.add(id)
     try {
+      const preStyles = typeof document === 'undefined'
+        ? new Set<Element>()
+        : new Set(document.querySelectorAll('style:not([data-plugin])'))
       const edges = new Set<string>()
       const exports = registered(this.makeRequire(edges))
-      const record: ClientModuleRecord = { id, exports, styles: claimStyles(id), edges }
+      const record: ClientModuleRecord = { id, exports, styles: claimStyles(id, preStyles), edges }
       this.loadCache.set(id, record)
       return record
     } finally {

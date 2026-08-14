@@ -239,10 +239,13 @@ describe('HMR reset', () => {
 })
 
 describe('style claiming', () => {
-  it('claims untagged style tags for the materializing plugin and inventories owned css ids', async () => {
+  it('claims only factory-injected untagged styles, leaving the shell sheet alone', async () => {
     const foreign = document.createElement('style')
     foreign.setAttribute('data-plugin', 'other')
     document.head.appendChild(foreign)
+    // A pre-existing untagged sheet: the shell's own global styles.
+    const shellSheet = document.createElement('style')
+    document.head.appendChild(shellSheet)
     const b = bench([row('a')], {
       a: () => {
         document.head.appendChild(document.createElement('style'))
@@ -257,6 +260,9 @@ describe('style claiming', () => {
     expect(b.loader.loadCache.get('a')?.styles).toEqual(['a', 'sheet-1'])
     expect(document.querySelectorAll('style[data-plugin="a"]')).toHaveLength(2)
     expect(foreign.getAttribute('data-plugin')).toBe('other')
+    // The shell sheet stays unclaimed, so plugin 'a' HMR teardown cannot
+    // remove it.
+    expect(shellSheet.getAttribute('data-plugin')).toBeNull()
   })
 
   it('materialization without a document skips the style inventory', async () => {
