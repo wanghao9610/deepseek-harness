@@ -387,7 +387,11 @@ export function loadProfile(
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers = bundles.map((packageName): ProfileLayer => {
     const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
-    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
+    const parsedManifest: unknown = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+    if (parsedManifest === null || typeof parsedManifest !== 'object' || Array.isArray(parsedManifest)) {
+      throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} has a degenerate package.json (expected an object)`)
+    }
+    const bundleManifest = parsedManifest as ProfileManifest
     const declared = bundleManifest.dsh?.bundle?.patch
     if (declared === undefined) {
       throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)

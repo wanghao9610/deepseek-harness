@@ -75,6 +75,40 @@ describe('ask_user_question tool', () => {
     expect(parameters.properties.questions.items.properties.options.items.properties).not.toHaveProperty('preview')
   })
 
+  it('forwards detail and intent so presentation data reaches the ask channel', async () => {
+    const ctx = await setup()
+    const seen: AskUserQuestionRequest[] = []
+    ctx.userQuestions.registerProvider({
+      async ask(request) {
+        seen.push(request)
+        return { answers: [{ id: 'plan-review', selected: ['Approve'] }] }
+      },
+    })
+
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('ask-detail'),
+      name: 'ask_user_question',
+      arguments: {
+        questions: [{
+          id: 'plan-review',
+          question: 'Approve this plan?',
+          detail: '# The plan',
+          intent: { kind: 'plan-review', approve: 'Approve' },
+          options: [{ label: 'Approve', description: 'Carry out the plan.' }],
+        }],
+      },
+    })
+
+    expect(seen).toMatchObject([{
+      questions: [{
+        id: 'plan-review',
+        detail: '# The plan',
+        intent: { kind: 'plan-review', approve: 'Approve' },
+      }],
+    }])
+  })
+
   it('asks the registered user-questions provider and projects structured answers to text', async () => {
     const ctx = await setup()
     const seen: AskUserQuestionRequest[] = []

@@ -43,6 +43,8 @@ describe('parseCommand()', () => {
     ['/goal create the thing', { name: 'goal', rawInput: ' create the thing' }],
     ['/goal\ncreate the thing', { name: 'goal', rawInput: '\ncreate the thing' }],
     ['/goal_name-2\t x ', { name: 'goal_name-2', rawInput: '\t x ' }],
+    ['/goal\u00a0now', { name: 'goal', rawInput: '\u00a0now' }],
+    ['/goal\u000Bnext', { name: 'goal', rawInput: '\u000Bnext' }],
   ] as const)('parses %j without normalizing trailing input', (line, expected) => {
     expect(parseCommand(line)).toEqual(expected)
   })

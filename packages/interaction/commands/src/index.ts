@@ -100,7 +100,10 @@ declare module '@deepseek-ai/cordis' {
  * @returns The parsed command, or `undefined` when the line is not a command.
  */
 export function parseCommand(line: string): ParsedCommand | undefined {
-  const match = /^\/([a-z][a-z0-9_-]*)(?=$|[\t\n\r ])/u.exec(line)
+  // \s with the /u flag covers every Unicode whitespace: a command name
+  // terminated by NBSP, \v, or \f still routes to its handler instead of
+  // flowing to the model as ordinary input.
+  const match = /^\/([a-z][a-z0-9_-]*)(?=$|\s)/u.exec(line)
   if (match === null) return undefined
   const name = match[1]
   /* v8 ignore next -- the first capture is required whenever the regular expression matches */
