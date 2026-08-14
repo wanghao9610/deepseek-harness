@@ -132,6 +132,11 @@ interface UnitCell {
   state: unknown
   /** Seq of the last event passed through `apply` (regardless of change). */
   observedSeq: number
+  /**
+   * Set when the last drive failed for this unit: the next drive rebuilds
+   * from the log prefix instead of folding onto a state missing an event.
+   */
+  broken?: boolean
 }
 
 /**
@@ -405,21 +410,37 @@ export class SessionProjectionRegistry extends Service {
   private drive(session: Session, event: SessionEvent): void {
     for (const registration of this.registrations.values()) {
       let cell = registration.cells.get(session)
-      if (cell === undefined) {
-        // Late build mid-stream: fold history before this event (seq = log
-        // index, so the prefix slice is exact), then take the normal gate.
-        cell = this.buildCell(registration.def, session.events.slice(0, event.seq))
-        registration.cells.set(session, cell)
-      }
-      const next = registration.def.apply(cell.state, event)
-      const changed = !Object.is(next, cell.state)
-      cell.state = next
-      cell.observedSeq = event.seq
-      if (changed && this.listeners.size > 0) {
+      try {
+        if (cell === undefined || cell.broken === true) {
+          // Late build mid-stream (or rebuild after a failure): fold history
+          // before this event (seq = log index, so the prefix slice is
+          // exact), then take the normal gate.
+          cell = this.buildCell(registration.def, session.events.slice(0, event.seq))
+          registration.cells.set(session, cell)
+        }
+        const next = registration.def.apply(cell.state, event)
+        const changed = !Object.is(next, cell.state)
+        cell.state = next
+        cell.observedSeq = event.seq
+        if (!changed || this.listeners.size === 0) continue
         const value = registration.def.schema.parse(registration.def.view(next))
         for (const listener of this.listeners) {
-          listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)
+          try {
+            listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)
+          } catch (error) {
+            // One throwing subscriber must not starve the others (or abort the
+            // pass) — the value already committed.
+            console.error('session projection listener failed:', registration.def.key, error)
+          }
         }
+      } catch (error) {
+        // One broken unit must not desynchronize or starve the others: its
+        // cell stays at the last committed event (checkpoint stays "possibly
+        // stale, never wrong") and rebuilds from the log prefix on the next
+        // drive, so a transient failure self-heals instead of folding onto a
+        // state missing this event.
+        if (cell !== undefined) cell.broken = true
+        console.error('session projection unit failed:', registration.def.key, error)
       }
     }
   }
