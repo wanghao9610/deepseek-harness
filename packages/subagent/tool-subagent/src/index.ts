@@ -373,6 +373,11 @@ export function apply(ctx: Context, config: Config): void {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
+        if (args.prompt.trim().length === 0) {
+          // Every out-of-process provider rejects an empty prompt; an empty child
+          // turn would waste a model request and mint a spurious session.
+          throw new Error('subagent tool prompt must be a non-empty string')
+        }
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
         const request = {
           label: args.description,

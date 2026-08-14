@@ -28,6 +28,13 @@ export type {
 } from './types.ts'
 export type { WorkflowRun, WorkflowStartRequest } from './runtime-types.ts'
 
+/**
+ * Default total-child ceiling an engine applies to one workflow run. Shared so
+ * consumers that budget their own round/task limits (tool-ralph's maxRounds)
+ * validate against the engine's baseline instead of a driftable local copy.
+ */
+export const DEFAULT_MAX_TOTAL_AGENTS = 1000
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     workflowEngine: WorkflowEngine

@@ -105,6 +105,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     command: string,
     env?: Readonly<Record<string, string>>,
     signal?: AbortSignal,
+    cwd: string = process.cwd(),
   ): Promise<string> {
     if (command.length === 0) throw new Error('subprocess-local: executable must be non-empty')
     signal?.throwIfAborted()
@@ -115,7 +116,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
         `subprocess-local: command ${JSON.stringify(command)} is a relative path; use an absolute path or a bare PATH name`,
       )
     }
-    const candidates = absolute ? [command] : this.executableCandidates(command, environment)
+    const candidates = absolute ? [command] : this.executableCandidates(command, environment, cwd)
     for (const candidate of candidates) {
       signal?.throwIfAborted()
       try {
@@ -134,13 +135,16 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       : `subprocess-local: command ${JSON.stringify(command)} was not found on PATH`)
   }
 
-  private executableCandidates(command: string, env: NodeJS.ProcessEnv): string[] {
+  private executableCandidates(command: string, env: NodeJS.ProcessEnv, cwd: string = process.cwd()): string[] {
     const path = environmentValue(env, 'PATH') ?? ''
     const extensions = process.platform === 'win32' && extname(command) === ''
       ? (environmentValue(env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD').split(';')
       : ['']
+    // Relative PATH entries resolve against the command's working directory
+    // (the spawn cwd), never the harness process cwd; empty entries mean the
+    // cwd itself, matching POSIX PATH semantics.
     return path.split(delimiter).flatMap(directory =>
-      extensions.map(extension => resolve(process.cwd(), directory, command + extension)))
+      extensions.map(extension => resolve(cwd, directory, command + extension)))
   }
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {

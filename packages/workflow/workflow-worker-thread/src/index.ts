@@ -11,7 +11,7 @@ import { availableParallelism } from 'node:os'
 import * as vm from 'node:vm'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import WorkflowEngine, { WorkflowError, WorkflowRunId } from '@deepseek-ai/dsh-workflow'
+import WorkflowEngine, { DEFAULT_MAX_TOTAL_AGENTS, WorkflowError, WorkflowRunId } from '@deepseek-ai/dsh-workflow'
 import type { WorkflowRun, WorkflowRunInfo, WorkflowStartRequest } from '@deepseek-ai/dsh-workflow'
 import { WorkerRun } from './host.ts'
 import { validateMeta } from './meta.ts'
@@ -115,7 +115,7 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
   static Config: z<Config> = z.object({
     provider: z.string().default('spawn'),
     maxConcurrentAgents: z.natural().default(0),
-    maxTotalAgents: z.natural().min(1).default(1000),
+    maxTotalAgents: z.natural().min(1).default(DEFAULT_MAX_TOTAL_AGENTS),
     maxItemsPerCall: z.natural().min(1).default(4096),
     syncTimeoutMs: z.natural().min(1).default(5000),
     disposeGraceMs: z.natural().default(5000),
