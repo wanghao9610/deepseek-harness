@@ -159,7 +159,11 @@ export class InputHub implements SessionInputResolver {
     void this.conversation().sendSession(session, text, imageIds, mode).catch(() => {
       if (this.shells.get(session.sessionId) === shell) {
         shell?.restoreImages(imageIds)
-        if (shell?.snapshot.draft === '') shell.setDraft(text)
+        if (shell?.snapshot.draft === '') {
+          // Restore the pre-serialization draft: the serialized projection
+          // would destroy the reference chips the user composed.
+          shell.setDraft(shell.lastSubmitDraft ?? text)
+        }
         return
       }
       const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined

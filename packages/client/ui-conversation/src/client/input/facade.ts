@@ -89,6 +89,10 @@ export class SessionInputShell implements SessionInput {
   private disposed = false
   /** In-flight reference serialization, aborted by dispose(). */
   private serializationController: AbortController | undefined
+  /** Single-flight latch over the serialized sink (duplicate Enter/Send guard). */
+  private sinkInFlight = false
+  /** The pre-serialization draft of the last attempt, for the hub's failed-send restore. */
+  lastSubmitDraft: string | undefined
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
 
@@ -420,12 +424,18 @@ export class SessionInputShell implements SessionInput {
    * the clipboard text. Chip-free drafts skip the async detour.
    */
   private sinkSerialized(draft: string, mode: InputSubmitMode): void {
+    // Single-flight: a duplicate Enter/Send while a send is being prepared
+    // (reference serialization in flight) must not submit twice.
+    if (this.sinkInFlight) return
     const imageIds = [...this.imageIds]
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
       this.deps.defaultSink(draft.trim(), imageIds, mode)
       return
     }
+    this.sinkInFlight = true
+    this.lastSubmitDraft = draft
+    const settle = (): void => { this.sinkInFlight = false }
     const inputTriggers = this.deps.inputTriggers?.()
     const controller = new AbortController()
     this.serializationController = controller
@@ -434,6 +444,7 @@ export class SessionInputShell implements SessionInput {
       return { offset: o.offset, text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal) }
     })).then(
       (parts) => {
+        settle()
         if (this.disposed) return
         // Splice model forms over their placeholders (offsets are draft-time;
         // parts arrive offset-sorted since the table is).
@@ -448,6 +459,7 @@ export class SessionInputShell implements SessionInput {
         if (this.serializationController === controller) this.serializationController = undefined
       },
       (error: unknown) => {
+        settle()
         controller.abort()
         if (this.serializationController === controller) this.serializationController = undefined
         if (this.disposed) return
