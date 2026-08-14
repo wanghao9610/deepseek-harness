@@ -104,7 +104,7 @@ describe('the waiting affordance', () => {
     let releaseHost: (() => void) | undefined
     const bench = boot({
       hostHalf: () => new Promise((resolve) => {
-        releaseHost = () => resolve(HOST_OK)
+        releaseHost = () => { resolve(HOST_OK) }
       }),
     })
     bench.orchestrator.open({

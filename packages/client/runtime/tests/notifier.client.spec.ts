@@ -125,9 +125,9 @@ describe('Notifier', () => {
     await microtask()
     expect(rebuilds).toBe(1)
     // The failed rebuild leaves the notifier dirty: every pull retries.
-    expect(() => notifier.ensureFresh()).toThrow('rebuild boom')
+    expect(() => { notifier.ensureFresh() }).toThrow('rebuild boom')
     expect(rebuilds).toBe(2)
-    expect(() => notifier.ensureFresh()).toThrow('rebuild boom')
+    expect(() => { notifier.ensureFresh() }).toThrow('rebuild boom')
     expect(rebuilds).toBe(3)
     consoleError.mockRestore()
   })

@@ -140,6 +140,9 @@ export interface SandboxInternals {
 /** The chain's verdict: which runner confines, and how completely it enforces. */
 type SelectedRunner = { runner: 'bwrap' | 'landlock' | 'seatbelt' | 'windows-acl'; enforcement: SandboxEnforcement }
 
+/** The session id and workspace root a `tempCapabilities` key JSON-encodes, in that order. */
+type TempCapabilityKey = [string, string]
+
 /** One live session/workspace pair's private temp directory and capability. */
 interface AclTempCapability {
   dir: string
@@ -305,7 +308,8 @@ export class LocalSandboxProvider extends SandboxProvider {
     // revocable ACE per session until dispose.
     ctx.on('session/disposed', (session: Session) => {
       for (const key of [...this.tempCapabilities.keys()]) {
-        if (JSON.parse(key)[0] === String(session.id)) this.releaseTempCapability(key)
+        const [keySessionId] = JSON.parse(key) as TempCapabilityKey
+        if (keySessionId === String(session.id)) this.releaseTempCapability(key)
       }
     })
   }
@@ -438,7 +442,7 @@ export class LocalSandboxProvider extends SandboxProvider {
       }
       this.workspaceGrants.set(workspaceRoot, grant)
     }
-    const key = JSON.stringify([String(sessionId), workspaceRoot])
+    const key = JSON.stringify([String(sessionId), workspaceRoot] satisfies TempCapabilityKey)
     const existing = this.tempCapabilities.get(key)
     if (existing !== undefined) return existing
     const tempDir = mkdtempSync(join(tmpdir(), 'dsh-'))

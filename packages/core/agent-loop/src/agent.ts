@@ -327,7 +327,7 @@ export class ReactLoopAgent implements Agent {
     // controller replacement so the queued work stays parked until a fresh
     // wake, exactly like a cancel that lands mid-turn.
     const aborted = phase.abort.signal.aborted
-    const reason = phase.abort.signal.reason
+    const reason: unknown = phase.abort.signal.reason
     phase.abort = new AbortController()
     if (aborted) phase.abort.abort(reason)
     // A fresh controller makes a latch set on the old one stale: the live driver claims the queue itself.
