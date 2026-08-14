@@ -7,7 +7,7 @@
  * removal of registrations and change listeners (HMR safety).
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -60,6 +60,65 @@ const mark = (session: Session, marks: string[]): SessionEvent =>
   session.append('test/mark', { marks })
 
 describe('SessionProjectionRegistry drive', () => {
+  it('contains a throwing unit, keeps its cell at the last committed event, and self-heals', async () => {
+    const { ctx, session } = await harness()
+    let failNext = false
+    ctx.sessionProjections.register({
+      key: 'test/count',
+      schema: z.number().int().nonnegative(),
+      init: () => 0,
+      apply: (state) => {
+        if (failNext) throw new Error('unit boom')
+        return state + 1
+      },
+      view: state => state,
+      stateVersion: 1,
+    })
+    ctx.sessionProjections.register(marksUnit())
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      mark(session, ['first']) // count -> 1
+      failNext = true
+      mark(session, ['second']) // count unit throws; marks must still advance
+      expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['second'] })
+      // The broken unit's checkpoint stays at the last committed event.
+      expect(ctx.sessionProjections.checkpoint(session)['test/count']?.seq).toBe(0)
+      // Self-heal: the next event rebuilds the cell from the log prefix, so
+      // the skipped event lands too.
+      failNext = false
+      mark(session, ['third'])
+      expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(3)
+      expect(errorSpy).toHaveBeenCalledOnce()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('contains a throwing change listener and still notifies the rest', async () => {
+    const { ctx, session } = await harness()
+    ctx.sessionProjections.register(marksUnit())
+    const seen: string[] = []
+    ctx.sessionProjections.onChanged((_s, _key, value) => {
+      const marks = value as { marks: string[] }
+      seen.push(marks.marks[0] ?? '')
+      throw new Error('listener boom')
+    })
+    ctx.sessionProjections.onChanged((_s, _key, value) => {
+      const marks = value as { marks: string[] }
+      seen.push(marks.marks[0] ?? '')
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      mark(session, ['a'])
+      expect(seen).toEqual(['a', 'a'])
+      expect(errorSpy).toHaveBeenCalledOnce()
+      // The unit's own cell is unaffected by the listener failure.
+      expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['a'] })
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('drives a registered unit over committed events and snapshots the current value', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())
