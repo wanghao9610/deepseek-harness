@@ -393,6 +393,35 @@ describe('drainPipe', () => {
     return expect(drainPipe(api, 30n as NativePtr)).rejects.toMatchObject({ api: 'ReadFile' })
   })
 
+  it('bounds the captured bytes while still draining the pipe past the ceiling', () => {
+    let peeks = 0
+    let readCalls = 0
+    const api = {
+      peekNamedPipe: vi.fn((_pipe: unknown, _buffer: unknown, _size: unknown, _read: unknown, totalAvail: NativePtr) => {
+        peeks++
+        // 6 bytes available per peek, then EOF.
+        if (peeks > 4) return 0
+        koffi.encode(totalAvail, 'uint32', 6)
+        return 1
+      }),
+      readFile: vi.fn((_file: unknown, chunk: Buffer, count: number, read: NativePtr) => {
+        readCalls++
+        chunk.write('abcdef'.slice(0, count), 0, 'utf8')
+        koffi.encode(read, 'uint32', Math.min(count, 6))
+        return 1
+      }),
+      getLastError: vi.fn(() => abi.ERROR_BROKEN_PIPE),
+      closeHandle: vi.fn(() => 1),
+      formatMessageW: vi.fn(() => 0),
+    } as unknown as Win32Bindings
+    return drainPipe(api, 30n as NativePtr, 4).then((buffer) => {
+      // Only the first ceiling bytes are retained...
+      expect(buffer.toString('utf8')).toBe('abcd')
+      // ...but every peeked byte was still drained (no pipe back-pressure).
+      expect(readCalls).toBe(4)
+    })
+  })
+
   it('drains one chunk and stops at ERROR_BROKEN_PIPE', () => {
     let peeks = 0
     const api = {

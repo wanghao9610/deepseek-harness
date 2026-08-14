@@ -10,7 +10,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
-import { mkdir, open } from 'node:fs/promises'
+import { lstat, mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -106,7 +106,21 @@ export interface SavedText {
  */
 export async function saveTextFile(options: SaveTextOptions): Promise<SavedText> {
   const dir = sessionDir(options.root, options.sessionId)
-  await mkdir(dir, { recursive: true, mode: 0o700 })
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+  } catch (error) {
+    // A planted non-directory blocks the mkdir with EEXIST; fall through to
+    // the real-directory proof for the named refusal.
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+  }
+  // The session directory name is deterministic, so under a shared root a
+  // pre-planted symlink or file there would redirect every spill write; the
+  // random file prefix only defends the final component. Refuse anything that
+  // is not a real directory.
+  const dirInfo = await lstat(dir)
+  if (dirInfo.isSymbolicLink() || !dirInfo.isDirectory()) {
+    throw new Error(`spill-local: session spill directory ${JSON.stringify(dir)} is not a real directory`)
+  }
   const safeName = encodeSegment(options.suggestedName)
   const path = join(dir, `${randomBytes(6).toString('hex')}-${safeName}`)
   const bytes = Buffer.byteLength(options.content, 'utf8')

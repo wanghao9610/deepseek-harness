@@ -8,7 +8,7 @@
 
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { CallId } from '@deepseek-ai/dsh-llm'
@@ -83,6 +83,28 @@ describe('saveTextFile', () => {
     // The separators escaped, so the whole name is one leaf under the session dir.
     expect(dirname(saved.path)).toBe(sessionDir(root, 'sess-1'))
     expect(saved.path.includes('/..')).toBe(false)
+  })
+
+  it('refuses a symlink planted at the deterministic session directory', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-spill-outside-'))
+    try {
+      mkdirSync(sessionDir(root, 'sess-1'), { recursive: true, mode: 0o700 })
+      rmSync(sessionDir(root, 'sess-1'), { recursive: true, force: true })
+      symlinkSync(outside, sessionDir(root, 'sess-1'))
+      await expect(saveTextFile({ root, sessionId: 'sess-1', suggestedName: 'r.txt', content: 'x' }))
+        .rejects.toThrow(/not a real directory/)
+      // Nothing was written through the planted link.
+      expect(readdirSync(outside)).toEqual([])
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a plain file planted at the deterministic session directory', async () => {
+    mkdirSync(root, { recursive: true })
+    writeFileSync(sessionDir(root, 'sess-1'), 'not a directory')
+    await expect(saveTextFile({ root, sessionId: 'sess-1', suggestedName: 'r.txt', content: 'x' }))
+      .rejects.toThrow(/not a real directory/)
   })
 
   it('creates the session directory and file with owner-only POSIX permissions', async () => {

@@ -167,13 +167,27 @@ export function spawnSandboxed(
 }
 
 /**
+ * Hard ceiling for one drained pipe in bytes (a robustness invariant, not a
+ * tunable): a confined child streaming without end must not grow the capture
+ * without bound. Bytes past the ceiling are still drained — the pipe must not
+ * back-pressure the child into a deadlock — but discarded, so the result
+ * holds the first {@link MAX_CAPTURE_BYTES} bytes.
+ */
+export const MAX_CAPTURE_BYTES = 64 * 1024 * 1024
+
+/** Scratch size for the discard path: enough to keep the pipe flowing. */
+const DISCARD_SCRATCH_BYTES = 64 * 1024
+
+/**
  * Drain one pipe read end to a Buffer via non-blocking PeekNamedPipe polling.
  * @param api - the binding table.
  * @param handle - the pipe read end to drain (closed when done).
- * @returns the complete pipe contents.
+ * @param maxBytes - capture ceiling (a test hook; production uses {@link MAX_CAPTURE_BYTES}).
+ * @returns the captured pipe contents, truncated to the ceiling when exceeded.
  */
-export async function drainPipe(api: Win32Bindings, handle: NativePtr): Promise<Buffer> {
+export async function drainPipe(api: Win32Bindings, handle: NativePtr, maxBytes: number = MAX_CAPTURE_BYTES): Promise<Buffer> {
   const chunks: Buffer[] = []
+  let total = 0
   for (;;) {
     const bytesReadSlot = allocUint32()
     const totalAvailSlot = allocUint32()
@@ -186,12 +200,17 @@ export async function drainPipe(api: Win32Bindings, handle: NativePtr): Promise<
     }
     const available = decodeUint32(totalAvailSlot)
     if (available > 0) {
-      const chunk = Buffer.alloc(available)
+      const keep = Math.min(available, maxBytes - total)
+      const chunk = Buffer.alloc(keep > 0 ? keep : Math.min(available, DISCARD_SCRATCH_BYTES))
       const readSlot = allocUint32()
       if (api.readFile(handle, chunk, chunk.length, readSlot, null) === 0) {
         throwLastError(api, 'ReadFile', `drain failure after ${chunks.length} chunk(s)`)
       }
-      chunks.push(chunk.subarray(0, decodeUint32(readSlot)))
+      if (keep > 0) {
+        const read = decodeUint32(readSlot)
+        chunks.push(chunk.subarray(0, read))
+        total += read
+      }
     }
     // Small backoff instead of setImmediate: a bare next-tick would busy-poll
     // the pipe at full event-loop speed while the child produces no output.
