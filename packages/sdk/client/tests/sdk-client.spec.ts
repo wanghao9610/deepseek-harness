@@ -21,6 +21,7 @@ import {
   type HarnessNotification,
 } from '../src/index.ts'
 import { finalResponse, normalizeInput } from '../src/api.ts'
+import { MAX_STDERR_TAIL_CHARS } from '../src/client.ts'
 
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
 
@@ -494,6 +495,17 @@ describe('wire payload validation', () => {
 })
 
 describe('stderr tail bound', () => {
+  it('discards an unterminated stderr segment past the ceiling', async () => {
+    const client = new HarnessClient(fakeLaunch({ FAKE_STDERR_BULK: String(MAX_STDERR_TAIL_CHARS + 1) }))
+    cleanups.push(() => client.close())
+    const failure = await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' }).then(
+      () => { throw new Error('initialize unexpectedly succeeded') },
+      (error: unknown) => error,
+    )
+    // The overlong segment is dropped, never flushed whole into the tail.
+    expect(String(failure).length).toBeLessThan(MAX_STDERR_TAIL_CHARS)
+  })
+
   it('keeps only the newest lines up to the limit', async () => {
     const manyLines = Array.from({ length: 450 }, (_, i) => `line-${i}`).join('\n')
     const client = new HarnessClient(fakeLaunch({ FAKE_STDERR: manyLines, FAKE_EXIT_BEFORE_INIT: '1' }))

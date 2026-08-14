@@ -41,6 +41,8 @@
  * - `FAKE_EXIT_BEFORE_INIT`: exit 3 immediately (spawn-then-die probe).
  * - `FAKE_STDERR`: write this line to stderr at boot (diagnostics-tail probe).
  * - `FAKE_STDERR_NO_NEWLINE`: write this to stderr WITHOUT a newline (buffer-flush probe).
+ * - `FAKE_STDERR_BULK`: write this many 'x' characters to stderr WITHOUT a
+ *   newline, then exit 3 once the write flushed (unbounded-capture probe).
  * - `FAKE_RECORD_INIT`: append each `initialize` params JSON to this file (handshake probe).
  */
 
@@ -50,8 +52,18 @@ import { createInterface } from 'node:readline'
 
 const env = process.env
 
+// The bulk probe exits from the stderr write callback; its requests are
+// ignored so the runtime cannot answer initialize before the exit lands.
+const bulkProbe = env.FAKE_STDERR_BULK !== undefined
+
 if (env.FAKE_STDERR !== undefined) process.stderr.write(`${env.FAKE_STDERR}\n`)
 if (env.FAKE_STDERR_NO_NEWLINE !== undefined) process.stderr.write(env.FAKE_STDERR_NO_NEWLINE)
+if (env.FAKE_STDERR_BULK !== undefined) {
+  const count = Number(env.FAKE_STDERR_BULK)
+  if (Number.isSafeInteger(count) && count > 0) {
+    process.stderr.write('x'.repeat(count), () => process.exit(3))
+  }
+}
 if (env.FAKE_EXIT_BEFORE_INIT !== undefined) process.exit(3)
 
 if (env.FAKE_IGNORE_EOF !== undefined) {
@@ -155,6 +167,7 @@ function sessionIdOf(params: Record<string, unknown> | undefined): string {
 
 const reader = createInterface({ input: process.stdin })
 reader.on('line', (line) => {
+  if (bulkProbe) return
   if (line.trim().length === 0) return
   const frame = JSON.parse(line) as { id?: string | number; method?: string; params?: Record<string, unknown> }
   if (frame.method === undefined || frame.id === undefined) return
