@@ -11,11 +11,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
-    open: async (path, flags, ...rest) => {
+    open: async (path: string | Buffer | URL, flags: string | number) => {
       if (flags === 'r') {
         throw Object.assign(new Error('directory fsync unsupported'), { code: 'EIO' })
       }
-      return actual.open(path as never, flags as never, ...rest as never[])
+      return actual.open(path, flags)
     },
   }
 })
