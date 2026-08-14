@@ -161,7 +161,7 @@ find(agent: Agent, name: string): CommandDefinition | undefined
 
 Types: [Agent](core.md)
 
-Source: [`packages/interaction/commands/src/index.ts:225`](../../packages/interaction/commands/src/index.ts)
+Source: [`packages/interaction/commands/src/index.ts:228`](../../packages/interaction/commands/src/index.ts)
 
 <a id="commands-events"></a>
 

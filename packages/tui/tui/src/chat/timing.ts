@@ -147,7 +147,7 @@ interface TrackedStep extends TimingState {
  * all steps' totals: each query advances a cursor over the events appended
  * since the previous query, so a transcript of S steps costs O(events) in
  * total instead of the O(S × events) of replaying the whole log per footer
- * ([rationale](../../../../../.agents/notes/implemented/bug-fix/2026-08-03-tui-long-session-render-costs.md)).
+ * ([rationale](../../../../../.agents/notes/archived/bug-fix/2026-08-03-tui-long-session-render-costs.md)).
  *
  * The log must be append-only with stable indices (the session `seq = log
  * length` contract). Event times are consumed as logged: a backward wall-clock

@@ -170,6 +170,14 @@ interface SubprocessHandle {
    * @returns `true` when the tree exited, `false` when the signal aborted first.
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
+  /**
+   * Synchronously probe whether the process tree may still contain live
+   * processes. A settled {@link done} does not imply `false`: a leader can
+   * exit while a descendant it spawned still holds the inherited pipes.
+   * @returns `false` only once the tree's exit is confirmed (no more
+   * signalling possible); `true` while a survivor can still be reached.
+   */
+  treeAlive(): boolean
 }
 ```
 
@@ -298,9 +306,10 @@ Implementations must honor these semantics:
  * @param command - absolute executable path or bare PATH name.
  * @param env - explicit environment entries used for lookup.
  * @param signal - aborts remote or local lookup.
+ * @param cwd - working directory that resolves relative PATH entries; defaults to `process.cwd()`.
  * @returns a canonical executable path.
  */
-abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>
+abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, cwd?: string, ): Promise<string>
 
 /**
  * Start one managed child process from a fully-specified spec; this seam

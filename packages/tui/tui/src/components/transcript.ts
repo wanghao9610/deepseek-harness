@@ -437,7 +437,7 @@ export type ToolCardVisibility = 'hidden' | 'collapsed' | 'expanded'
  * every component each frame and relies on per-component line caches (its own
  * `Text`/`Markdown` do this); a card that rebuilds rows inside `render(width)`
  * would re-wrap its output every frame
- * ([rationale](../../../../../.agents/notes/implemented/bug-fix/2026-08-03-tui-long-session-render-costs.md)).
+ * ([rationale](../../../../../.agents/notes/archived/bug-fix/2026-08-03-tui-long-session-render-costs.md)).
  * Subclasses render through {@link renderLines} and call {@link dropLines}
  * from every state mutator; with `invalidate()` (pi-tui's tree-wide cascade)
  * also dropping, a state change always re-renders.
