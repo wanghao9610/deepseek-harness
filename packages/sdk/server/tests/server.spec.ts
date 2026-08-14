@@ -171,6 +171,37 @@ describe('HarnessSdkJsonRpcServer', () => {
     }
   })
 
+  it('rejects malformed wire params with a clear TypeError', async () => {
+    const ctx = new Context()
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    try {
+      await expect(server.handleRequest('initialize', undefined)).rejects.toThrow('initialize requires a params object')
+      await expect(server.handleRequest('initialize', {})).rejects.toThrow('params.cwd must be a non-empty string')
+      await expect(server.handleRequest('initialize', { cwd: '', provider: 'p', model: 'm' })).rejects.toThrow('params.cwd must be a non-empty string')
+      await expect(server.handleRequest('initialize', { cwd: 42, provider: 'p', model: 'm' })).rejects.toThrow('params.cwd must be a non-empty string')
+      await expect(server.handleRequest('initialize', { cwd: '.', provider: '', model: 'm' })).rejects.toThrow('params.provider must be a non-empty string')
+      await expect(server.handleRequest('initialize', { cwd: '.', provider: 'p', model: '' })).rejects.toThrow('params.model must be a non-empty string')
+      await expect(server.handleRequest('initialize', { cwd: '.', provider: 'p', model: 'm', maxTokens: 0 })).rejects.toThrow('maxTokens must be a positive safe integer')
+      await expect(server.handleRequest('initialize', { cwd: '.', provider: 'p', model: 'm', maxTokens: 1.5 })).rejects.toThrow('maxTokens must be a positive safe integer')
+      await expect(server.handleRequest('initialize', { cwd: '.', provider: 'p', model: 'm', maxTokens: 'x' })).rejects.toThrow('maxTokens must be a positive safe integer')
+
+      await expect(server.handleRequest('session/prompt', undefined)).rejects.toThrow('session/prompt requires a params object')
+      await expect(server.handleRequest('session/prompt', {})).rejects.toThrow('params.sessionId must be a non-empty string')
+      await expect(server.handleRequest('session/prompt', { sessionId: '', contentBlocks: [{ type: 'text', text: 'x' }] })).rejects.toThrow('params.sessionId must be a non-empty string')
+      await expect(server.handleRequest('session/prompt', { sessionId: 123, contentBlocks: [{ type: 'text', text: 'x' }] })).rejects.toThrow('params.sessionId must be a non-empty string')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main' })).rejects.toThrow('params.contentBlocks must be a non-empty array')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: [] })).rejects.toThrow('params.contentBlocks must be a non-empty array')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: ['x'] })).rejects.toThrow('entries must be objects')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: [null] })).rejects.toThrow('entries must be objects')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: [[]] })).rejects.toThrow('entries must be objects')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: [{ type: 5 }] })).rejects.toThrow('require a non-empty string "type"')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: [{ type: '' }] })).rejects.toThrow('require a non-empty string "type"')
+      await expect(server.handleRequest('session/prompt', { sessionId: 'main', contentBlocks: [{ type: 'text' }] })).rejects.toThrow('"text" content blocks require a string "text"')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('queues overlapping prompts for one session without blocking other sessions', async () => {
     const mainFollowup = vi.fn<Agent['followup']>()
     const mainAgent = ({
