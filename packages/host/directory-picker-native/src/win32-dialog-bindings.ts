@@ -33,11 +33,16 @@ interface Koffi {
  * `_Out_ void **` out-params surface a raw address, and
  * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
  * on real Windows — so view the memory directly instead.
+ *
+ * The terminator is a zero *code unit*, not a zero byte: a character whose
+ * code point is a multiple of 0x100 — U+4E00 一 among them — carries a zero
+ * low byte, and a byte-wise scan would cut the path at the first such
+ * character.
  */
 function readUtf16(koffi: Koffi, address: unknown): string {
   const bytes = Buffer.from(koffi.view(address, 32768))
   let end = 0
-  while (end + 1 < bytes.length && bytes[end] !== 0) end += 2
+  while (end + 1 < bytes.length && bytes.readUInt16LE(end) !== 0) end += 2
   return bytes.toString('utf16le', 0, end)
 }
 
