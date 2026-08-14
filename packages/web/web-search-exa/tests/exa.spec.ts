@@ -170,6 +170,15 @@ describe('ExaSearchProvider error handling', () => {
     await expect(new ExaSearchProvider(options).search({ query: 'q' }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
   })
+  it('maps an abort carrying a non-DOMException reason to WEB_ABORTED', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('tool deadline'))
+    // undici rejects fetch with the signal's reason; the reason is not a DOMException.
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.reject((init.signal as AbortSignal).reason)))
+    await expect(new ExaSearchProvider(options).search({ query: 'q' }, controller.signal))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+  })
+
 
   it('maps an unparseable success body to WEB_PROVIDER_ERROR', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 200 })))

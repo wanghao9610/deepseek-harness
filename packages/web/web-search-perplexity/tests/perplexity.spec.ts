@@ -177,6 +177,15 @@ describe('PerplexitySearchProvider error handling', () => {
     await expect(new PerplexitySearchProvider(options).search({ query: 'q' }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
   })
+
+  it('maps an abort carrying a non-DOMException reason to WEB_ABORTED', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('tool deadline'))
+    // undici rejects fetch with the signal's reason; the reason is not a DOMException.
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.reject((init.signal as AbortSignal).reason)))
+    await expect(new PerplexitySearchProvider(options).search({ query: 'q' }, controller.signal))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_ABORTED' }))
+  })
 })
 
 describe('web-search-perplexity plugin registration', () => {
