@@ -151,7 +151,12 @@ function exceedsConversionDepth(html: string): boolean {
         continue
       }
     }
-    if (start === -1) break
+    if (start === -1) {
+      // No more markup at all: an unclosed comment hides everything after it
+      // from the stack, so reject rather than let the remainder pass unseen.
+      if (inComment) return true
+      break
+    }
     if (!inComment && html.startsWith('<!--', start)) {
       inComment = true
       offset = start + 4
@@ -170,6 +175,7 @@ function exceedsConversionDepth(html: string): boolean {
 
     const name = lowerHtml.slice(nameStart, cursor)
     let quote: '"' | "'" | undefined
+    let terminated = false
     while (cursor < html.length) {
       const char = html[cursor]
       cursor += 1
@@ -178,10 +184,15 @@ function exceedsConversionDepth(html: string): boolean {
       } else if (char === '"' || char === "'") {
         quote = char
       } else if (char === '>') {
+        terminated = true
         break
       }
     }
-    if (html[cursor - 1] !== '>') break
+    // A tag that never terminates hides the rest of the document from the
+    // stack; reject instead of under-counting (the documented over-count
+    // stance). The flag — not the last scanned character — decides: a scan that
+    // runs off the end inside an open quote ends on any character.
+    if (!terminated) return true
 
     if (closing) {
       if (!inComment && openElements.at(-1) === name) openElements.pop()
@@ -193,7 +204,8 @@ function exceedsConversionDepth(html: string): boolean {
         if (openElements.length > MAX_CONVERSION_DEPTH) return true
         if (!inComment && RAW_TEXT_ELEMENTS.has(name)) {
           const end = findRawTextEnd(lowerHtml, name, cursor)
-          if (end === -1) break
+          // An unclosed raw-text body hides everything after it; reject.
+          if (end === -1) return true
           offset = end
           continue
         }

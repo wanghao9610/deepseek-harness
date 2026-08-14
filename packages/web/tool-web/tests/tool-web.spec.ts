@@ -302,10 +302,24 @@ describe('fetch formatting', () => {
     expect(renderHtml(`<!doctype html><?pi><1bad>${paragraphs}${script}`))
       .not.toContain('<p')
     expect(renderHtml('plain text')).toBe('plain text')
-    expect(renderHtml('<p>x</p><!-- unfinished')).toBe('x')
-    expect(renderHtml('<script>unclosed')).toBe('')
+    // Unclosed comments, unterminated tags, and unclosed raw-text bodies hide
+    // the rest of the document from the depth preflight, so they degrade to
+    // raw HTML instead of attempting conversion.
+    expect(renderHtml('<p>x</p><!-- unfinished')).toBe('<p>x</p><!-- unfinished')
+    expect(renderHtml('<script>unclosed')).toBe('<script>unclosed')
     expect(renderHtml('<script>closed by slash</script/>')).toBe('')
-    expect(renderHtml('<script>closed at end</script')).toBe('')
+    expect(renderHtml('<script>closed at end</script')).toBe('<script>closed at end</script')
+  })
+
+  it('an unterminated tag cannot hide deep nesting from the preflight', () => {
+    const depth = 20_000
+    const pathological = '<div class="' + '<div>'.repeat(depth)
+    const started = Date.now()
+    expect(formatFetchOutput({
+      url: 'https://a.test', statusCode: 200, truncated: false,
+      body: { kind: 'html', content: pathological },
+    }, NO_CAP)).toBe(HEADER + pathological)
+    expect(Date.now() - started).toBeLessThan(2_000)
   })
 
   it('scans malformed unterminated tags in bounded time', () => {
