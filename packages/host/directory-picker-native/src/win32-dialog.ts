@@ -6,6 +6,7 @@
  * surface is injectable so every driver path is testable on any platform.
  */
 
+import type { Readable } from 'node:stream'
 import { closeThreadWindows as hostCloseThreadWindows, spawnDialogWorker } from './win32-dialog-host.ts'
 import type { Win32DialogWorkerData, Win32DialogWorkerMessage } from './win32-dialog-worker.ts'
 
@@ -13,12 +14,19 @@ import type { Win32DialogWorkerData, Win32DialogWorkerMessage } from './win32-di
 export interface Win32DialogWorkerLike {
   /**
    * Subscribe to a child-process event.
-   * @param event - `message`, `error`, or `exit`.
+   * @param event - `message`, `error`, or `close`.
    * @param listener - the event consumer.
    */
   on(event: 'message', listener: (message: Win32DialogWorkerMessage) => void): unknown
   on(event: 'error', listener: (error: Error) => void): unknown
-  on(event: 'exit', listener: (code: number) => void): unknown
+  on(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
+  /**
+   * The child's standard error, or null when the spawn did not pipe it. A
+   * child that dies before posting — a load-time throw, a native fault in
+   * the COM conversation — leaves its reason here and in no other place the
+   * driver can reach, so the retained tail is what its rejection carries.
+   */
+  readonly stderr: Readable | null
   /**
    * Force-stop the child; the abort path's last resort when `WM_CLOSE`
    * never lands (e.g. the dialog window was never created).
@@ -49,6 +57,25 @@ export const DIALOG_TITLE = 'Select Workspace Directory'
 const CLOSE_RETRY_MS = 150
 /** Abort-service attempts before force-terminating the worker. */
 const CLOSE_MAX_ATTEMPTS = 20
+/** Characters of worker standard error retained as the diagnostic for a silent exit. */
+const STDERR_TAIL_CHARS = 4096
+
+/**
+ * Name how the worker ended, for the one rejection whose only evidence is
+ * the ending itself.
+ *
+ * Windows reports a native fault as an NTSTATUS-valued exit code, so a code
+ * outside the POSIX status range also carries its hexadecimal form:
+ * `0xc0000005` names an access violation where `3221225477` names nothing.
+ * @param code - the exit code, or null when a signal ended the worker.
+ * @param signal - the signal that ended it, when one did.
+ * @returns the phrase naming the ending.
+ */
+function describeExit(code: number | null, signal: NodeJS.Signals | null): string {
+  if (code === null) return `signal ${signal ?? 'unknown'}`
+  if (code >= 0 && code <= 0xff) return `exit code ${String(code)}`
+  return `exit code ${String(code)} (0x${(code >>> 0).toString(16)})`
+}
 
 /** Fail loudly if the closed worker-to-driver union gains an unhandled member. */
 /* v8 ignore start -- closed-union backstop; unreachable without a TypeScript contract violation */
@@ -76,6 +103,12 @@ export async function pickWin32Directory(
   let dialogThreadId: number | undefined
   let closeTimer: NodeJS.Timeout | undefined
   let settled = false
+  let stderrTail = ''
+
+  worker.stderr?.setEncoding('utf8')
+  worker.stderr?.on('data', (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CHARS)
+  })
 
   return await new Promise<string | null>((resolve, reject) => {
     const settle = (outcome: () => void): void => {
@@ -83,6 +116,10 @@ export async function pickWin32Directory(
       settled = true
       if (closeTimer !== undefined) clearInterval(closeTimer)
       signal.removeEventListener('abort', onAbort)
+      // A child left in the native modal call must not hold the host open,
+      // and the stderr pipe carries an event-loop reference of its own that
+      // releasing the process handle does not cover.
+      worker.stderr?.destroy()
       worker.unref?.()
       outcome()
     }
@@ -150,9 +187,14 @@ export async function pickWin32Directory(
         reject(error)
       })
     })
-    worker.on('exit', () => {
+    // `close`, not `exit`: the stderr pipe is the only account a worker that
+    // died before posting leaves behind, and `exit` can precede its last
+    // chunk. Nothing else holds the pipe open, so the worker's own ending
+    // always closes it.
+    worker.on('close', (code, endingSignal) => {
       settle(() => {
-        reject(new Error('win32 folder dialog worker exited before reporting a result'))
+        const account = stderrTail.trim()
+        reject(new Error(`win32 folder dialog worker exited before reporting a result (${describeExit(code, endingSignal)})${account === '' ? '' : `: ${account}`}`))
       })
     })
   })
