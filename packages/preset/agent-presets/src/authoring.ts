@@ -161,6 +161,12 @@ export async function copyComposition(
       await writeFileAtomic(metadataPath, rendered, { mode: 0o600, dirMode: 0o700 })
     }
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      // errorOnExist lost the race: another copy claimed the id between the
+      // occupied probe and cp. The directory belongs to the winner — removing
+      // it would silently destroy a completed preset.
+      throw new PresetExistsError(id)
+    }
     // A half-copied directory would be invisible to discovery at best and a
     // mountable-but-incomplete preset at worst; a failed copy leaves nothing.
     await rm(dir, { recursive: true, force: true })
