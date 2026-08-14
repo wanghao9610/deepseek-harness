@@ -83,6 +83,8 @@ export function apply(ctx: Context): void {
           id: question.id,
           question: question.question,
           ...question.header !== undefined ? { header: question.header } : {},
+          ...question.detail !== undefined ? { detail: question.detail } : {},
+          ...question.intent !== undefined ? { intent: question.intent } : {},
           ...question.options !== undefined ? { options: question.options } : {},
           ...question.multi_select !== undefined ? { multiSelect: question.multi_select } : {},
         })),

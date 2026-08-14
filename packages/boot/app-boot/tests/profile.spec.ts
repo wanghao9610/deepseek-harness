@@ -195,6 +195,19 @@ describe('loadProfile', () => {
     initProfile(dir, ['not-a-bundle'])
     expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('declares no dsh.bundle')
   })
+
+  it('names a degenerate bundle package.json instead of a raw TypeError', () => {
+    const anchor = stageInstallation({ 'null-bundle': {}, 'array-bundle': {} })
+    writeFileSync(join(anchor, '..', 'node_modules', 'null-bundle', 'package.json'), 'null')
+    writeFileSync(join(anchor, '..', 'node_modules', 'array-bundle', 'package.json'), '[]')
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['null-bundle'])
+    expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('has a degenerate package.json (expected an object)')
+    const dir2 = resolveProfileDir('demo2', home)
+    initProfile(dir2, ['array-bundle'])
+    expect(() => loadProfile('t', 'demo2', anchor, home)).toThrow('has a degenerate package.json (expected an object)')
+  })
 })
 
 describe('composeEntries', () => {
