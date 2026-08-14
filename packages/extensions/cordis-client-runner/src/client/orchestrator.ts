@@ -149,6 +149,12 @@ export class CordisRunOrchestrator {
   open(request: CordisRunRequest): void {
     this.requests.set(request.requestId, request)
     if (!request.requiresApproval) {
+      if (this.inFlight.has(request.pluginId)) {
+        // A run is already being orchestrated for this plugin: the replayed
+        // request rides it, so its entry must not dangle past the plan.
+        this.requests.delete(request.requestId)
+        return
+      }
       void this.orchestrate({
         agentId: request.agentId,
         pluginId: request.pluginId,

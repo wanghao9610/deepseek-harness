@@ -100,6 +100,40 @@ function ask(bench: Bench, requestId: ApprovalRequestId = REQ): void {
 }
 
 describe('the waiting affordance', () => {
+  it('coalesces a second non-approval open while the run is in flight (no dangling request)', async () => {
+    let releaseHost: (() => void) | undefined
+    const bench = boot({
+      hostHalf: () => new Promise((resolve) => {
+        releaseHost = () => resolve(HOST_OK)
+      }),
+    })
+    bench.orchestrator.open({
+      requestId: REQ,
+      agentId: AGENT,
+      pluginId: PLUGIN,
+      packageId: PACKAGE,
+      mode: 'run',
+      name: 'demo',
+      purpose: 'draw a clock',
+      requiresApproval: false,
+    })
+    await vi.waitFor(() => { expect(bench.host.runHostHalf).toHaveBeenCalled() })
+    // A replayed panel gesture for the same plugin arrives mid-orchestration.
+    bench.orchestrator.open({
+      requestId: 'replay-1' as ApprovalRequestId,
+      agentId: AGENT,
+      pluginId: PLUGIN,
+      packageId: PACKAGE,
+      mode: 'run',
+      name: 'demo',
+      purpose: 'draw a clock',
+      requiresApproval: false,
+    })
+    expect((bench.orchestrator as unknown as { requests: Map<string, unknown> }).requests.size).toBe(0)
+    releaseHost?.()
+    await vi.waitFor(() => { expect(bench.load).toHaveBeenCalled() })
+  })
+
   it('publishes failures on their own observable', async () => {
     const bench = boot({ hostHalf: () => Promise.resolve({ ok: false, message: 'nope' }) })
     let notified = 0
