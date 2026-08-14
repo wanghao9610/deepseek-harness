@@ -78,15 +78,17 @@ export function expandHomePath(path: string): string {
  *
  * Precedence, highest first: an explicit configured path, `$DSH_HOME`, then
  * `~/.dsh`. The harness keeps all user data under one root. An empty or
- * whitespace-only `$DSH_HOME` is treated as unset, so a blank override never
- * resolves the home to the current working directory.
+ * whitespace-only override — configured or `$DSH_HOME` alike — is treated as
+ * unset, so a blank override never resolves the home to the current working
+ * directory.
  * @param configured - explicit harness-home override, which has highest precedence.
  * @param env - environment mapping used to read `DSH_HOME`.
  * @returns the normalized absolute harness home path.
  */
 export function resolveDshHome(configured?: string, env: Record<string, string | undefined> = process.env): string {
   const fromEnv = env[DSH_HOME_ENV]
-  const selected = configured ?? (fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : defaultDshHome())
+  const configuredSelected = configured !== undefined && configured.trim().length > 0 ? configured : undefined
+  const selected = configuredSelected ?? (fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : defaultDshHome())
   return resolve(expandHomePath(selected))
 }
 
