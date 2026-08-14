@@ -62,6 +62,7 @@ export class ConnectionController {
   private generation = 0
   private attempt = 0
   private current: AbortController | null = null
+  private idle: AbortController | undefined
   private running = false
   private lastState: ConnectionState | null = null
   private readonly config: Required<ConnectionConfig>
@@ -86,6 +87,8 @@ export class ConnectionController {
     this.running = false
     this.current?.abort()
     this.current = null
+    this.idle?.abort()
+    this.idle = undefined
   }
 
   private backoffDelay(attempt: number): number {
@@ -129,18 +132,17 @@ export class ConnectionController {
         void this.pumpStream(this.api.events.host({}, ac.signal, hostOpened), this.sinks.onHostEnvelope, settle)
       })
 
+      const timeout = new AbortController()
       try {
         // Strict readiness handshake: describe proves unary reachability, onOpen
         // proves each physical stream is established before any frame —
         // only then may onConnected fire, so the resync it triggers cannot outrun the
         // subscribed baseline. The timeout guards against a carrier that never fires onOpen
         // (see ConnectionConfig.streamOpenTimeoutMs).
-        const timeout = new AbortController()
         const [description] = await Promise.all([
           this.api.host.describe({}),
           Promise.race([streamsOpen, sleep(this.config.streamOpenTimeoutMs, timeout.signal)]),
         ])
-        timeout.abort()
         const descriptionResult = description.result
         if (!descriptionResult.ok) {
           throw new Error(`host.describe failed: ${descriptionResult.error.code}: ${descriptionResult.error.message}`)
@@ -156,6 +158,11 @@ export class ConnectionController {
       } catch {
         // Transport failure: treat as generation failure, fall through to the shared backoff.
         if (!ac.signal.aborted) ac.abort()
+      } finally {
+        // The readiness timeout must not outlive the handshake: a rejected
+        // describe would otherwise leave the 3s timer running (holding the api
+        // client) until it fires.
+        timeout.abort()
       }
 
       await failed
@@ -164,7 +171,12 @@ export class ConnectionController {
       this.attempt += 1
       console.warn(`[web-runtime] connection lost, retry #${this.attempt}`)
       const idle = new AbortController()
-      await sleep(this.backoffDelay(this.attempt), idle.signal)
+      this.idle = idle
+      try {
+        await sleep(this.backoffDelay(this.attempt), idle.signal)
+      } finally {
+        if (this.idle === idle) this.idle = undefined
+      }
     }
   }
 
