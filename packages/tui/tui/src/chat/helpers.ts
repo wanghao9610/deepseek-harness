@@ -36,10 +36,14 @@ export class HintEditor extends Editor {
     const padding = ' '.repeat(this.getPaddingX())
     /* v8 ignore next -- the mounted editor is focused whenever its empty-input hint is rendered. */
     const marker = this.focused ? CURSOR_MARKER : ''
-    const available = Math.max(0, width - visibleWidth(padding) - visibleWidth(this.hintPrefix))
+    // The fixed prefix must respect the width budget too: a narrow terminal
+    // (prefix wider than the row) would otherwise emit an over-long first row
+    // and break the editor's row-alignment math.
+    const prefix = truncateToWidth(`${padding}${this.hintPrefix}`, width, '')
+    const available = Math.max(0, width - visibleWidth(prefix))
     const placeholder = truncateToWidth(this.hint, available, '')
-    const used = visibleWidth(padding) + visibleWidth(this.hintPrefix) + visibleWidth(placeholder)
-    lines[0] = `${padding}${this.hintPrefix}${marker}${placeholder}${' '.repeat(Math.max(0, width - used))}`
+    const used = visibleWidth(prefix) + visibleWidth(placeholder)
+    lines[0] = `${prefix}${marker}${placeholder}${' '.repeat(Math.max(0, width - used))}`
     return lines
   }
 }
