@@ -299,6 +299,31 @@ describe('failure stages', () => {
 })
 
 describe('retract', () => {
+  it('retires the seated factory and styles when the loader create fails', async () => {
+    const bench = await boot()
+    const env = bench.runner as unknown as { env: { loader: { create: (opts: { name: string }) => Promise<string> } } }
+    vi.spyOn(env.env.loader, 'create').mockRejectedValueOnce(new Error('loader create exploded'))
+    await expect(bench.runner.load(half())).rejects.toThrow('loader create exploded')
+    vi.restoreAllMocks()
+    // The failed create retired the seated factory: the module table must
+    // not keep it for the next load of the same plugin.
+    expect(bench.invalidated).toContain('dyn/dyn-1')
+    expect(bench.runner.isLoaded(PLUGIN)).toBe(false)
+  })
+
+  it('contains a teardown failure during retract instead of an unhandled rejection', async () => {
+    const bench = await boot()
+    await bench.runner.load(half())
+    const env = bench.runner as unknown as { env: { loader: { remove: (id: string) => Promise<void> } } }
+    vi.spyOn(env.env.loader, 'remove').mockRejectedValueOnce(new Error('remove exploded'))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    bench.runner.retract(PLUGIN, RUN)
+    await bench.settle()
+    const mirrored = logged.mock.calls.filter(call => String(call[0]).includes('retract of'))
+    logged.mockRestore()
+    expect(mirrored).toHaveLength(1)
+  })
+
   it('unloads at the named revision', async () => {
     const bench = await boot()
     await bench.runner.load(half())

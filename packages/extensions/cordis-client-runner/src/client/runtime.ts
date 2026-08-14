@@ -312,6 +312,10 @@ export class DynamicCordisPackageRunner {
       if (current === undefined || current.pkg.pluginRunId !== pluginRunId) return
       await this.teardown(pluginId, current.entryId, current.styles)
       this.notify()
+    }).catch((error: unknown) => {
+      // A teardown failure (loader removal, fiber disposal) must not surface
+      // as an unhandled rejection from a fire-and-forget verb.
+      console.error('[cordis-client-runner] retract of ' + JSON.stringify(pluginId) + ' failed:', error)
     })
   }
 
@@ -371,11 +375,24 @@ export class DynamicCordisPackageRunner {
     this.env.modules.invalidate(moduleId)
     const sink = (globalThis as ModuleLoaderSink).__ModuleLoader__
     if (sink === undefined) {
+      // No factory was seated, but the evaluation injected styles are still
+      // ours to retire.
+      styles.dispose()
       throw new Error('cordis-client-runner: window.__ModuleLoader__ is missing (booted outside the web shell?)')
     }
     sink.load({ id: moduleId, factory: () => surface })
 
-    const entryId = await this.env.loader.create({ name: moduleId })
+    let entryId: Awaited<ReturnType<Loader['create']>>
+    try {
+      entryId = await this.env.loader.create({ name: moduleId })
+    } catch (error) {
+      // The factory is already seated in the module table: a failed create
+      // must retire both it and the injected styles, or the next load for the
+      // same plugin behaves against the stale factory.
+      this.env.modules.invalidate(moduleId)
+      styles.dispose()
+      throw error
+    }
     const fiber = this.env.loader.resolve(entryId).fiber
     if (fiber === undefined) {
       await this.teardown(half.pluginId, entryId, styles)
