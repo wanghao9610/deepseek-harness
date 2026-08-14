@@ -132,6 +132,8 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
   private readonly registry = new DynamicCordisRegistry()
   private readonly inspectRegistry: CordisInspectRegistryService
   private readonly starting = new Map<CordisDynamicPluginId, Promise<DynamicCordisHostHalfResult>>()
+  /** Per-plugin in-flight retract: concurrent activations await it instead of overlapping the unwinding fiber. */
+  private readonly retractTasks = new Map<CordisDynamicPluginId, Promise<void>>()
   private readonly resolved: ResolvedConfig
   private group: Fiber | undefined
 
@@ -839,6 +841,11 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
         startedHere: false,
       }
     }
+    // A concurrent stop/undefine may be mid-retract (plugin.run already
+    // deleted, fiber still unwinding); wait for it so the new run never
+    // overlaps the old fiber's teardown.
+    const retracting = this.retractTasks.get(plugin.pluginId)
+    if (retracting !== undefined) await retracting
     if (plugin.run !== undefined) await this.retract(plugin)
     if (mode === 'update' || plugin.currentPackageId === undefined) plugin.nextPackageId = definition.packageId
     const run: DynamicCordisRun = {
@@ -1216,7 +1223,17 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     }
   }
 
-  private async retract(plugin: DynamicCordisPlugin): Promise<void> {
+  private retract(plugin: DynamicCordisPlugin): Promise<void> {
+    const existing = this.retractTasks.get(plugin.pluginId)
+    if (existing !== undefined) return existing
+    const task = this.doRetract(plugin).finally(() => {
+      this.retractTasks.delete(plugin.pluginId)
+    })
+    this.retractTasks.set(plugin.pluginId, task)
+    return task
+  }
+
+  private async doRetract(plugin: DynamicCordisPlugin): Promise<void> {
     const run = plugin.run
     if (run === undefined) return
     delete plugin.run

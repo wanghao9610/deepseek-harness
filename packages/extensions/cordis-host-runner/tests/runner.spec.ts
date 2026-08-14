@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ApprovalRequestId } from '../src/index.ts'
 import type {
   ApprovalRequestId as ApprovalRequestIdType, CordisDynamicPluginId,
@@ -419,6 +419,44 @@ describe('dynamic runner dispatch', () => {
 })
 
 describe('dynamic runner teardown', () => {
+  it('serializes a retract so a racing panel run waits for the unwinding fiber', async () => {
+    const { ctx, runner, gateway } = await setup()
+    gateway.answer = 'approve'
+    const { pluginId, packageId } = define(runner, {
+      sessionId: AGENT_A.id, name: 'doubler', purpose: 'p', host: HOST_CODE, client: CLIENT_CODE,
+    })
+    const first = await runner.run(AGENT_A, pluginId, packageId, 'run')
+    if (!first.ok) throw new Error(first.message)
+    await gateway.answering
+
+    // Pause the live fiber's dispose so the retract stays in flight.
+    const internals = runner as unknown as {
+      registry: { get(id: string): { run: { fiber: { dispose(): Promise<void> } } } }
+    }
+    const fiber = internals.registry.get(pluginId).run.fiber
+    const originalDispose = fiber.dispose.bind(fiber)
+    const gate = Promise.withResolvers<undefined>()
+    const dispose = vi.spyOn(fiber, 'dispose').mockImplementation(() => gate.promise.then(() => originalDispose()))
+
+    const stopping = runner.stop(AGENT_A, pluginId)
+    await vi.waitFor(() => { expect(dispose).toHaveBeenCalled() })
+
+    // A panel gesture racing the stop must not mount a fresh fiber over the
+    // still-unwinding one: it waits for the retract, then starts cleanly.
+    const racing = runner.runHostHalf(AGENT_A, pluginId, packageId, 'run', null, false)
+    let racingSettled = false
+    void racing.then(() => { racingSettled = true })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(racingSettled).toBe(false)
+
+    gate.resolve(undefined)
+    await expect(stopping).resolves.toEqual({ ok: true })
+    await expect(racing).resolves.toMatchObject({ ok: true, startedHere: true, pluginRunId: 'run-2' })
+    expect(gateway.events.filter(event => event[0] === 'cordis/dynamic-retract')).toHaveLength(1)
+    expect(ctx.get('dynDoubler')).toBeDefined()
+    dispose.mockRestore()
+  })
+
   it('stops both halves while keeping the definition runnable', async () => {
     const { ctx, runner, gateway } = await setup()
     gateway.answer = 'approve'
