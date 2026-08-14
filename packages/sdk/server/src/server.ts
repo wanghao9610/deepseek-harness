@@ -8,7 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolve } from 'node:path'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -27,6 +27,60 @@ import type {
 
 interface SessionRecord {
   handle: AgentHandle
+}
+
+/**
+ * Validate wire `initialize` params. The transport only guarantees "some
+ * object", so every field is checked here; the rejection becomes a `-32603`
+ * error frame instead of a raw TypeError deep in the server.
+ */
+function parseInitializeParams(params: Record<string, unknown> | undefined): InitializeParams {
+  if (params === undefined) throw new TypeError('initialize requires a params object')
+  const { cwd, provider, model, maxTokens } = params
+  if (typeof cwd !== 'string' || cwd.length === 0) {
+    throw new TypeError('initialize params.cwd must be a non-empty string')
+  }
+  if (typeof provider !== 'string' || provider.length === 0) {
+    throw new TypeError('initialize params.provider must be a non-empty string')
+  }
+  if (typeof model !== 'string' || model.length === 0) {
+    throw new TypeError('initialize params.model must be a non-empty string')
+  }
+  if (maxTokens !== undefined && (typeof maxTokens !== 'number' || !Number.isSafeInteger(maxTokens) || maxTokens <= 0)) {
+    throw new TypeError('initialize maxTokens must be a positive safe integer')
+  }
+  const parsed: InitializeParams = { cwd, provider, model }
+  if (maxTokens !== undefined) parsed.maxTokens = maxTokens
+  return parsed
+}
+
+/**
+ * Validate wire `session/prompt` params. Every content block must be an
+ * object with a non-empty string `type`; `text` blocks additionally require
+ * a string `text`. The remaining block vocabulary stays merge-extensible.
+ */
+function parseSessionPromptParams(params: Record<string, unknown> | undefined): SessionPromptParams {
+  if (params === undefined) throw new TypeError('session/prompt requires a params object')
+  const { sessionId, contentBlocks } = params
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    throw new TypeError('session/prompt params.sessionId must be a non-empty string')
+  }
+  if (!Array.isArray(contentBlocks) || contentBlocks.length === 0) {
+    throw new TypeError('session/prompt params.contentBlocks must be a non-empty array')
+  }
+  for (const block of contentBlocks) {
+    if (block === null || typeof block !== 'object' || Array.isArray(block)) {
+      throw new TypeError('session/prompt params.contentBlocks entries must be objects')
+    }
+    const record = block as Record<string, unknown>
+    if (typeof record.type !== 'string' || record.type.length === 0) {
+      throw new TypeError('session/prompt params.contentBlocks entries require a non-empty string "type"')
+    }
+    if (record.type === 'text' && typeof record.text !== 'string') {
+      throw new TypeError('session/prompt "text" content blocks require a string "text"')
+    }
+  }
+  return { sessionId, contentBlocks: contentBlocks as ContentBlock[] }
 }
 
 /** Recover the delegating parent from the service-owned scoped carrier. */
@@ -190,9 +244,9 @@ export class HarnessSdkJsonRpcServer {
   async handleRequest(method: string, params: Record<string, unknown> | undefined): Promise<unknown> {
     switch (method) {
       case 'initialize':
-        return this.initialize(params as unknown as InitializeParams)
+        return this.initialize(parseInitializeParams(params))
       case 'session/prompt':
-        return this.prompt(params as unknown as SessionPromptParams)
+        return this.prompt(parseSessionPromptParams(params))
       case 'shutdown':
         return this.shutdown()
       default:
