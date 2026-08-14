@@ -660,7 +660,19 @@ export class Session implements SessionFace {
     if (projections !== undefined) this.projections.seed(projections)
     const buffered = this.liveBuffer
     this.liveBuffer = []
-    for (const item of buffered) this.appendLive(item.event, item.view)
+    for (let i = 0; i < buffered.length; i += 1) {
+      const item = buffered[i]
+      const tailSeq = this.windowTailSeq()
+      if (tailSeq !== null && item.event.seq > tailSeq + 1) {
+        // The repull still lags this buffered event: keep it (and the rest,
+        // in order) buffered and repair again instead of appending a hole —
+        // the window must stay one contiguous raw range.
+        this.liveBuffer.push(...buffered.slice(i))
+        void this.repairGap()
+        break
+      }
+      this.appendLive(item.event, item.view)
+    }
     this.notifier.markDirty()
   }
 

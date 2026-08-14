@@ -359,6 +359,27 @@ describe('live event path', () => {
     expect(snapshots[0]?.chat.timeline.turns.get(1)?.status).toBe('open')
   })
 
+  it('keeps a still-lagging repull from appending a hole and heals on the next repair', async () => {
+    const { api, session } = await opened(plainTurn(0, 0, 'a', 'b')) // tail seq = 5
+    api.onHistory = () => histResponse(plainTurn(0, 0, 'a', 'b')) // repull still ends at 5
+    session.handleMuxEnvelope('r' as never, { type: 'session/event', sessionId: SID, event: ev.assistant(9, 1, 'd') })
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.history').length).toBe(2)
+    })
+    await Promise.resolve()
+    // The lagging repull did not append seq 9 into the window (no hole).
+    expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([1, 3])
+
+    // A later successful repull still lands the buffered frame.
+    api.onHistory = () => histResponse([...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')])
+    session.handleMuxEnvelope('r2' as never, { type: 'session/event', sessionId: SID, event: ev.assistant(10, 1, 'e') })
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.history').length).toBe(3)
+    })
+    await Promise.resolve()
+    expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([1, 3, 7, 9])
+  })
+
   it('repairs a seq gap by repulling the tail page instead of appending a hole', async () => {
     const { api, session } = await opened(plainTurn(0, 0, 'a', 'b')) // tail seq = 5
     const repaired = [...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')]
