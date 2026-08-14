@@ -130,10 +130,18 @@ export async function startCodexRun(
     env: spec.env,
   })
 
-  const wire = new CodexAppServerWire(
-    child.stdout as NonNullable<SubprocessHandle['stdout']>,
-    child.stdin as NonNullable<SubprocessHandle['stdin']>,
-  )
+  let wire: CodexAppServerWire
+  try {
+    wire = new CodexAppServerWire(
+      child.stdout as NonNullable<SubprocessHandle['stdout']>,
+      child.stdin as NonNullable<SubprocessHandle['stdin']>,
+    )
+  } catch (error) {
+    // The wire never came to own the child: terminate the tree before surfacing.
+    child.terminate()
+    await child.done
+    throw error
+  }
   const disposeProcess = (): Promise<void> => disposeCodexChild(wire, child)
 
   const processFailure: Promise<never> = child.done.then(
