@@ -115,6 +115,7 @@ export class HarnessSdkJsonRpcServer {
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
   private shuttingDown = false
+  private initialized = false
 
   constructor(
     private readonly ctx: Context,
@@ -175,6 +176,7 @@ export class HarnessSdkJsonRpcServer {
       if (this.provider !== 'deepseek-official') throw new Error(`no adapter registered for provider "${this.provider}"`)
       this.llmFiber = await this.ctx.plugin(LlmDeepSeek, {})
     }
+    this.initialized = true
     return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
   }
 
@@ -245,8 +247,14 @@ export class HarnessSdkJsonRpcServer {
     switch (method) {
       case 'initialize':
         return this.initialize(parseInitializeParams(params))
-      case 'session/prompt':
-        return this.prompt(parseSessionPromptParams(params))
+      case 'session/prompt': {
+        const promptParams = parseSessionPromptParams(params)
+        // A prompt that wins a race against the handshake would silently scope
+        // the session to the process defaults (cwd/provider/model) instead of
+        // the declared SDK route.
+        if (!this.initialized) throw new Error('SDK server requires initialize before session/prompt')
+        return this.prompt(promptParams)
+      }
       case 'shutdown':
         return this.shutdown()
       default:

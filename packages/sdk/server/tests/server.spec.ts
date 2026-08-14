@@ -171,6 +171,38 @@ describe('HarnessSdkJsonRpcServer', () => {
     }
   })
 
+  it('rejects session/prompt before initialize and accepts it after', async () => {
+    const followup = vi.fn<Agent['followup']>()
+    const agent = ({
+      id: SessionId('main'),
+      followup,
+    } satisfies Pick<Agent, 'id' | 'followup'>) as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: {
+        create: vi.fn(async () => handle),
+        get: (id: SessionId) => (String(id) === 'main' ? agent : undefined),
+      },
+      get: () => ({ listProviders: () => [{ id: 'deepseek-official', name: 'DeepSeek' }] }),
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+
+    await expect(server.handleRequest('session/prompt', {
+      sessionId: 'main',
+      contentBlocks: [{ type: 'text', text: 'too early' }],
+    })).rejects.toThrow('SDK server requires initialize before session/prompt')
+
+    await server.handleRequest('initialize', { cwd: '.', provider: 'deepseek-official', model: 'm' })
+    const receipt = await server.handleRequest('session/prompt', {
+      sessionId: 'main',
+      contentBlocks: [{ type: 'text', text: 'after init' }],
+    })
+    expect((receipt as { messageId?: unknown }).messageId).toBeTypeOf('string')
+    expect(followup).toHaveBeenCalledOnce()
+    await server.shutdown()
+  })
+
   it('rejects malformed wire params with a clear TypeError', async () => {
     const ctx = new Context()
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
