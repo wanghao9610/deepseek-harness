@@ -184,6 +184,16 @@ export function defineCoverageCases(group: CoverageGroup): void {
       }
     })
 
+    it('rejects a non-positive defaultTimeoutMs at load instead of killing every hook at the executor', async () => {
+      const d = dir()
+      const path = hooks(d, {})
+      for (const bad of [0, -5, 1.5, Number.NaN]) {
+        const adapter = new MockAdapter([])
+        await expect(harness(path, adapter, { defaultTimeoutMs: bad }))
+          .rejects.toThrow(/hooks-claude-code: defaultTimeoutMs must be a positive integer/)
+      }
+    })
+
     it('the stderr summary cap is plugin config (stderrSummaryMaxChars)', async () => {
       const d = dir()
       const s = sh(d, 'long.sh', '#!/usr/bin/env bash\nprintf "x%.0s" {1..600} >&2\nexit 2\n')

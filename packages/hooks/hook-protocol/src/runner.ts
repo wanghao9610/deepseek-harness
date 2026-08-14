@@ -71,6 +71,15 @@ export async function runHook(
   now: () => number,
 ): Promise<RunHookResult> {
   const started = now()
+  // timeoutSec is a wire value (parsed config JSON): a zero/negative/non-finite
+  // value would hand the executor an impossible deadline, so it degrades to a
+  // non-blocking infrastructure rejection instead of failing the turn.
+  if (hook.timeoutSec !== undefined && (!Number.isFinite(hook.timeoutSec) || hook.timeoutSec <= 0)) {
+    return {
+      output: parseHookOutput(undefined, '', `hook timeoutSec must be a positive finite number of seconds, got ${JSON.stringify(hook.timeoutSec)}`),
+      durationMs: now() - started,
+    }
+  }
   const timeoutMs = hook.timeoutSec !== undefined ? hook.timeoutSec * 1000 : options.defaultTimeoutMs
   const stdin = JSON.stringify(options.payload) + (options.trailingNewline ? '\n' : '')
 

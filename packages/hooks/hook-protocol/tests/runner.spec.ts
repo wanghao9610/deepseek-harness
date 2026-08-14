@@ -87,6 +87,14 @@ describe('runHook — payload + env + stdin plumbing', () => {
     expect(specs[0]!.workdir).toBe('/work')
   })
 
+  it('degrades an invalid per-hook timeoutSec to a non-blocking rejection without running', async () => {
+    const { bash, specs } = recordingBash(async () => result())
+    const outcome = await runHook(bash, { command: 'h', timeoutSec: -5 }, { payload: {}, signal: testSignal(), defaultTimeoutMs: 60000, trailingNewline: true }, clock())
+    expect(specs).toHaveLength(0) // the executor never saw the impossible deadline
+    expect(outcome.output).toMatchObject({ exitCode: undefined, stdout: '' })
+    expect(outcome.output.stderr).toContain('timeoutSec must be a positive finite number of seconds')
+  })
+
   it('a per-hook timeoutSec (seconds) overrides the default (ms)', async () => {
     const { bash, specs } = recordingBash(async () => result())
     await runHook(bash, { command: 'h', timeoutSec: 3 }, { payload: {}, signal: testSignal(), defaultTimeoutMs: 60000, trailingNewline: true }, clock())
