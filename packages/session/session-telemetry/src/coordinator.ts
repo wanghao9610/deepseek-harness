@@ -178,16 +178,11 @@ export class SessionTelemetryCoordinator {
 
   /** Project, redact, and hand one event to the backend. */
   private captureEvent(session: Session, event: SessionEvent): void {
-    if (event.type === 'assistant/chunk') {
-      const key = `${event.data.turn}:${event.data.step}`
-      const seen = this.seen(session)
-      // Fixed chunk projection: only the first chunk of each (turn, step)
-      // ships — the stream-started signal; content is byte-complete in the
-      // step's assembled assistant/message. Dropped chunks do not advance
-      // the cursor, so re-adoption re-drops them deterministically.
-      if (seen.has(key)) return
-      seen.add(key)
-    }
+    // Fixed chunk projection: only the first chunk of each (turn, step)
+    // ships — the stream-started signal; content is byte-complete in the
+    // step's assembled assistant/message.
+    const chunkKey = event.type === 'assistant/chunk' ? `${event.data.turn}:${event.data.step}` : undefined
+    if (chunkKey !== undefined && this.seen(session).has(chunkKey)) return
     this.deliver(session, {
       record: this.redact({
         channel: 'ledger',
@@ -200,6 +195,10 @@ export class SessionTelemetryCoordinator {
       }),
       seq: event.seq,
     })
+    // The key lands only after delivery: a failed emit leaves the chunk
+    // unseen (and the cursor behind), so re-adoption re-delivers the
+    // stream-started signal instead of dropping it forever.
+    if (chunkKey !== undefined) this.seen(session).add(chunkKey)
   }
 
   /**

@@ -239,6 +239,18 @@ describe('session reference URI and inline mentions', () => {
 })
 
 describe('session reference discovery and preparation', () => {
+  it('bounds title reads to candidateLimit-sized batches and stops at the limit', async () => {
+    const ctx = await harness({ candidateLimit: 2 })
+    const target = ctx.sessions.create(SessionId('target'))
+    for (const i of [1, 2, 3, 4, 5]) ctx.sessions.create(SessionId(`sess-${i}`))
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), '', 1)).resolves.toHaveLength(1)
+    // One batch of candidateLimit ids — the rest of the roster is never read.
+    expect(readTitles).toHaveBeenCalledOnce()
+    expect(readTitles.mock.calls[0]?.[0]).toHaveLength(2)
+  })
+
   it('matches candidate metadata and titles before ranking by cwd', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same', createdAt: 10 } })

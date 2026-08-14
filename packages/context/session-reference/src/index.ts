@@ -123,39 +123,40 @@ export class SessionReferenceResolver extends Service {
     const records = (await settleWithCancellation(this.ctx.sessionQuery.listSessions(signal), signal))
       .filter(record => record.header.id !== agent.id)
       .map((record, index) => ({ record, index }))
-    const inspected = needle === ''
-      ? records
-        .sort((a, b) => candidateRank(a.record.header.cwd, targetCwd) - candidateRank(b.record.header.cwd, targetCwd)
-          || a.index - b.index)
-        .slice(0, limit)
-      : records
-    const observations = await settleWithCancellation(
-      this.ctx.sessionQuery.readTitleSnapshots(inspected.map(({ record }) => record.header.id), signal),
-      signal,
-    )
-    return inspected.map(({ record, index }, observationIndex) => {
-      const observation = observations[observationIndex] as SessionTitleObservationResult
-      return {
-        record,
-        index,
-        label: observation.status === 'fulfilled'
+    // Rank first (header fields only — no I/O), then read titles in
+    // config-bounded batches along that stream and stop once `limit` matches
+    // are found: a host autocomplete keystroke never fans a title read out
+    // over every session, and the result set is identical (rank, filter, cap).
+    const ranked = records
+      .sort((a, b) => candidateRank(a.record.header.cwd, targetCwd) - candidateRank(b.record.header.cwd, targetCwd)
+        || a.index - b.index)
+    const matches: { record: (typeof ranked)[number]['record']; index: number; label: string }[] = []
+    for (let offset = 0; offset < ranked.length && matches.length < limit; offset += this.config.candidateLimit) {
+      const batch = ranked.slice(offset, offset + this.config.candidateLimit)
+      const observations = await settleWithCancellation(
+        this.ctx.sessionQuery.readTitleSnapshots(batch.map(({ record }) => record.header.id), signal),
+        signal,
+      )
+      batch.forEach(({ record, index }, batchIndex) => {
+        if (matches.length >= limit) return
+        const observation = observations[batchIndex] as SessionTitleObservationResult
+        const label = observation.status === 'fulfilled'
           ? observation.value.title?.title ?? record.header.id
-          : record.header.id,
-      }
-    }).filter(({ record, label }) => {
-      if (needle === '') return true
-      return record.header.id.toLocaleLowerCase().includes(needle)
-        || record.header.cwd?.toLocaleLowerCase().includes(needle) === true
-        || label.toLocaleLowerCase().includes(needle)
-    }).sort((a, b) => candidateRank(a.record.header.cwd, targetCwd) - candidateRank(b.record.header.cwd, targetCwd)
-      || a.index - b.index)
-      .slice(0, limit)
-      .map(({ record, label }) => ({
-        sessionId: record.header.id,
-        label,
-        ...record.header.cwd === undefined ? {} : { cwd: record.header.cwd },
-        createdAt: record.header.createdAt,
-      }))
+          : record.header.id
+        if (needle !== '' && !(
+          record.header.id.toLocaleLowerCase().includes(needle)
+          || record.header.cwd?.toLocaleLowerCase().includes(needle) === true
+          || label.toLocaleLowerCase().includes(needle)
+        )) return
+        matches.push({ record, index, label })
+      })
+    }
+    return matches.map(({ record, label }) => ({
+      sessionId: record.header.id,
+      label,
+      ...record.header.cwd === undefined ? {} : { cwd: record.header.cwd },
+      createdAt: record.header.createdAt,
+    }))
   }
 
   /**

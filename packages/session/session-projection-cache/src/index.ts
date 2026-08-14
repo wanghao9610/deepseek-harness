@@ -139,7 +139,6 @@ export class SessionProjectionCache extends Service {
    */
   async write(session: Session): Promise<void> {
     const rows = this.ctx.sessionProjections.checkpoint(session)
-    this.markClean(session)
     // Durability barrier: the checkpoint cut was taken above, so flushing
     // AFTER it guarantees every event inside the cut is durably logged
     // before the cache row lands — a crash can leave the cache behind the
@@ -149,6 +148,10 @@ export class SessionProjectionCache extends Service {
     // any residual overreach is caught by the cold read's anchored floor.
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
     await this.put(session.id, identityOf(session.header), rows)
+    // Clean only after the fallible steps: a failed flush/put keeps the dirty
+    // bookkeeping alive so the next event (count threshold or interval timer)
+    // retries the write instead of leaving the cache silently behind the log.
+    this.markClean(session)
   }
 
   /**
