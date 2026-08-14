@@ -373,9 +373,11 @@ export class PlanModeController extends Service {
             ? 'The user chose to keep planning; revise the plan and present it again.'
             : `The user chose to keep planning; their feedback: ${feedback}`)
         }
-        // Keep plan guidance for the rest of this assistant tool batch. The
-        // silent selection is appended at the next accepted in-turn pre-step,
-        // before its request assembly.
+        // The pending OFF projects the approved state into the proposed next
+        // assembly (guidance removed there) while the durable fold still reads
+        // active; the accepted boundary at the next in-turn pre-step then
+        // commits the matching plan/mode event. Same-step retries reuse their
+        // already plan-shaped assembly.
         this.pendingIntents.set(agent.session, { active: false, narrate: false })
         return { approved: true }
       },
