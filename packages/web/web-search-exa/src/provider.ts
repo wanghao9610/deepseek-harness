@@ -116,7 +116,7 @@ export class ExaSearchProvider implements WebSearchProvider {
         ...signal !== undefined ? { signal } : {},
       })
     } catch (error: unknown) {
-      if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
+      if (signal?.aborted === true || isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
       throw new WebError(`Exa search request failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
 
@@ -131,7 +131,7 @@ export class ExaSearchProvider implements WebSearchProvider {
         // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
         // into a generic HTTP-error message — cancellation is not a provider
         // error (the seam's cancellation contract).
-        if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
+        if (signal?.aborted === true || isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
         // Otherwise: the HTTP status is already captured in `message` above; a
         // malformed/non-JSON error body (normal for gateway 5xx/429s) can only
         // cost a richer provider message, never the real error.
@@ -143,7 +143,7 @@ export class ExaSearchProvider implements WebSearchProvider {
       const payload = await response.json() as ExaSearchResponse
       return mapExaResponse(payload)
     } catch (error: unknown) {
-      if (isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
+      if (signal?.aborted === true || isAbortError(error)) throw new WebError('Exa search aborted', 'WEB_ABORTED', { cause: error })
       throw new WebError(`Exa returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
     }
   }
