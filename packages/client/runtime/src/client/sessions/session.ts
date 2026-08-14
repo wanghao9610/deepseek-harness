@@ -662,6 +662,8 @@ export class Session implements SessionFace {
     this.liveBuffer = []
     for (let i = 0; i < buffered.length; i += 1) {
       const item = buffered[i]
+      /* v8 ignore next -- the loop index stays below buffered.length. */
+      if (item === undefined) continue
       const tailSeq = this.windowTailSeq()
       if (tailSeq !== null && item.event.seq > tailSeq + 1) {
         // The repull still lags this buffered event: keep it (and the rest,
