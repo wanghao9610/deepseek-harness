@@ -65,6 +65,35 @@ describe('connection lifecycle', () => {
     expect(api.openMuxCount).toBe(0)
   })
 
+  it('stop() during the backoff cancels the pending retry timer', async () => {
+    vi.useFakeTimers()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const api = new FakeApiClient()
+      const states: ConnectionState[] = []
+      let connected = 0
+      const controller = new ConnectionController(api, {
+        onConnected: () => { connected++ },
+        onStateChange: state => states.push(state),
+      }, { backoffBaseMs: 10, backoffFactor: 1, backoffMaxMs: 3000, streamOpenTimeoutMs: 500 })
+      controller.start()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(connected).toBe(1)
+
+      api.failStreams(new Error('torn'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(states.at(-1)).toBe('reconnecting')
+
+      controller.stop()
+      // The backoff sleep's timer was aborted with the controller: teardown
+      // reaches quiescence instead of parking the loop for up to backoffMaxMs.
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('treats describe failure as generation failure and retries', async () => {
     const api = new FakeApiClient()
     const gate = deferred<Awaited<ReturnType<FakeApiClient['onDescribe']>>>()
