@@ -164,7 +164,9 @@ function literalEdit(content: string, request: FsEditRequest, displayPath: strin
   if (!request.replaceAll && matches !== 1) {
     throw new FsError(`cannot edit "${displayPath}": old_string matched ${matches} times`, 'FS_AMBIGUOUS_EDIT')
   }
-  return request.replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString)
+  // A string replacement argument would interpret $&, $1, `$` ` etc. in
+  // newString as substitution patterns; the function form inserts it literally.
+  return request.replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, () => newString)
 }
 
 /** Remote filesystem backend sharing the sandbox owned by `ctx.e2b`. */
