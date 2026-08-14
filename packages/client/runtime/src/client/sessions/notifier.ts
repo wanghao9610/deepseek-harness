@@ -67,7 +67,14 @@ export class Notifier {
   ensureFresh(): void {
     if (!this.dirty) return
     this.dirty = false
-    this.rebuild()
+    try {
+      this.rebuild()
+    } catch (error) {
+      // A failed rebuild must not silently serve a stale snapshot; keep the
+      // dirty bit so the next pull retries.
+      this.dirty = true
+      throw error
+    }
   }
 
   private schedule(kind: 'microtask' | 'frame'): void {
@@ -96,8 +103,23 @@ export class Notifier {
     this.notifyPending = false
     if (this.dirty) {
       this.dirty = false
-      this.rebuild()
+      try {
+        this.rebuild()
+      } catch (error) {
+        // Same contract as ensureFresh: a failed rebuild re-arms the dirty bit
+        // instead of leaving a stale snapshot marked clean.
+        this.dirty = true
+        console.error('snapshot rebuild failed:', error)
+      }
     }
-    for (const listener of this.listeners) listener()
+    for (const listener of this.listeners) {
+      try {
+        listener()
+      } catch (error) {
+        // Contain subscriber failures: one throwing render-side subscriber must
+        // not starve later listeners or abort the batched publication.
+        console.error('notifier listener failed:', error)
+      }
+    }
   }
 }

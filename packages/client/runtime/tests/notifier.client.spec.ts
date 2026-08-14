@@ -103,6 +103,35 @@ describe('Notifier', () => {
     expect(notifications).toBe(1)
   })
 
+  it('contains a throwing listener and still notifies the rest', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const order: string[] = []
+    const notifier = new Notifier(() => order.push('rebuild'))
+    notifier.subscribe(() => { order.push('first'); throw new Error('listener boom') })
+    notifier.subscribe(() => order.push('second'))
+    notifier.markDirty()
+    await microtask()
+    expect(order).toEqual(['rebuild', 'first', 'second'])
+    expect(consoleError).toHaveBeenCalledOnce()
+    consoleError.mockRestore()
+  })
+
+  it('re-arms the dirty bit when the rebuild throws instead of serving a stale snapshot', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let rebuilds = 0
+    const notifier = new Notifier(() => { rebuilds++; throw new Error('rebuild boom') })
+    notifier.subscribe(() => undefined)
+    notifier.markDirty()
+    await microtask()
+    expect(rebuilds).toBe(1)
+    // The failed rebuild leaves the notifier dirty: every pull retries.
+    expect(() => notifier.ensureFresh()).toThrow('rebuild boom')
+    expect(rebuilds).toBe(2)
+    expect(() => notifier.ensureFresh()).toThrow('rebuild boom')
+    expect(rebuilds).toBe(3)
+    consoleError.mockRestore()
+  })
+
   it('falls back to microtask batching when animation frames are unavailable', async () => {
     let notifications = 0
     const notifier = new Notifier(() => undefined)
