@@ -143,6 +143,27 @@ describe('windows-acl write grants (LocalSandboxProvider)', () => {
     }
   })
 
+  it('session disposal releases that session\u2019s temp capability (provider still alive)', async () => {
+    try {
+      const { sandbox, fiber, ctx } = await setup()
+      const ws = workspaceRoot()
+      scratch.push(ws)
+      const policy: SandboxPolicy = { mode: 'workspace-write', workspaceRoot: ws, sessionId: SessionId('sess-end') }
+      const confined = sandbox.confine(['pwsh', '/Command', 'x'], policy)
+      const tempDir = flag(confined.argv, '--temp')
+      expect(existsSync(tempDir ?? '')).toBe(true)
+
+      ctx.emit('session/disposed', { id: SessionId('sess-end') } as never)
+      expect(existsSync(tempDir ?? '')).toBe(false)
+      expect(mockState.grants.filter(grant => grant.disposed)).toHaveLength(1)
+      // The workspace's standing grant survives (the reuse cache).
+      expect(mockState.grants.find(grant => grant.writeSid === WORKSPACE_SID)?.disposed).toBe(false)
+      await fiber.dispose()
+    } finally {
+      cleanup()
+    }
+  })
+
   it('read-only materializes no capability; upgrade creates them and downgrade leaves them reusable', async () => {
     try {
       const { sandbox, fiber } = await setup()

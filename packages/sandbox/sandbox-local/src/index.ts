@@ -36,7 +36,7 @@ import z from '@deepseek-ai/schemastery'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import { SandboxProvider, SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, ConfinedSandboxMode, RunnerFailureRule, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { AclWriteGrant, assertTempRootOutsideWorkspace, tempWriteSid, workspaceWriteSid } from '@deepseek-ai/dsh-sandbox-windows-acl'
 import { bwrapProfileArgs, landlockProfileArgs, seatbeltProfileArgs } from './profiles.ts'
 
@@ -300,6 +300,35 @@ export class LocalSandboxProvider extends SandboxProvider {
     ctx.effect(() => () => {
       this.revokeAclGrants()
     })
+    // Release the per-session temp grants as their sessions end, so a
+    // long-lived server does not accumulate one private temp directory +
+    // revocable ACE per session until dispose.
+    ctx.on('session/disposed', (session: Session) => {
+      for (const key of [...this.tempCapabilities.keys()]) {
+        if (JSON.parse(key)[0] === String(session.id)) this.releaseTempCapability(key)
+      }
+    })
+  }
+
+  /** Revoke and remove one session/workspace pair's temp capability (provider-dispose and session-end share it). */
+  private releaseTempCapability(key: string): void {
+    const capability = this.tempCapabilities.get(key)
+    if (capability === undefined) return
+    this.tempCapabilities.delete(key)
+    const failures: unknown[] = []
+    try {
+      capability.grant.dispose()
+    } catch (error) {
+      failures.push(error)
+    }
+    try {
+      this.removeTempDir(capability.dir)
+    } catch (error) {
+      failures.push(error)
+    }
+    for (const error of failures) {
+      this.ctx.logger.warn(`sandbox-local: session temp capability cleanup failed: ${String(error)}`)
+    }
   }
 
   /**
