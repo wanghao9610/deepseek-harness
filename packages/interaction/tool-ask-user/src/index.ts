@@ -8,6 +8,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { AskUserQuestionIntent } from '@deepseek-ai/dsh-user-questions'
 import '@deepseek-ai/dsh-user-questions'
 
 export const name = 'tool-ask-user'
@@ -83,8 +84,10 @@ export function apply(ctx: Context): void {
           id: question.id,
           question: question.question,
           ...question.header !== undefined ? { header: question.header } : {},
-          ...question.detail !== undefined ? { detail: question.detail } : {},
-          ...question.intent !== undefined ? { intent: question.intent } : {},
+          // Wire values typed loosely by the schema; ask() re-validates both
+          // (detail is prose; a malformed intent is rejected as BAD_INTENT).
+          ...question.detail !== undefined ? { detail: question.detail as string } : {},
+          ...question.intent !== undefined ? { intent: question.intent as AskUserQuestionIntent } : {},
           ...question.options !== undefined ? { options: question.options } : {},
           ...question.multi_select !== undefined ? { multiSelect: question.multi_select } : {},
         })),

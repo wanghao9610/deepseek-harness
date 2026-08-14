@@ -249,6 +249,13 @@ export class E2BSubprocessHandle implements SubprocessHandle {
   }
 
   /** @inheritdoc */
+  treeAlive(): boolean {
+    // `quiescenceProven` is this provider's confirmed tree exit; until it is
+    // set a remote descendant may still be alive and reachable.
+    return !this.quiescenceProven
+  }
+
+  /** @inheritdoc */
   async waitForExit(signal?: AbortSignal): Promise<boolean> {
     if (this.quiescenceProven) return true
     let handle: CommandHandle | undefined

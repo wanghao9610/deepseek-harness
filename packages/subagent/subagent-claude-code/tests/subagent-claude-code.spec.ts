@@ -151,6 +151,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     done,
     terminate,
     waitForExit,
+    treeAlive: () => true,
   }
   return {
     handle,
