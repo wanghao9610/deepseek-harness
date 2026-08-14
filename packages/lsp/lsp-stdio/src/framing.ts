@@ -29,6 +29,8 @@ export function encodeMessage(message: unknown): Buffer {
  */
 export class MessageDecoder {
   private buffer: Buffer = Buffer.alloc(0)
+  /** Bytes of `buffer` that carry data; the rest is spare capacity. */
+  private used = 0
   private readonly maxMessageBytes: number
 
   /**
@@ -45,7 +47,16 @@ export class MessageDecoder {
    * @throws Error when a header is malformed or a body exceeds `maxMessageBytes`.
    */
   push(chunk: Buffer): unknown[] {
-    this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])
+    // Amortized growth: fragmented chunks copy into spare capacity instead of
+    // re-concatenating the whole accumulated buffer per push (quadratic).
+    const needed = this.used + chunk.length
+    if (needed > this.buffer.length) {
+      const grown = Buffer.alloc(Math.max(needed, this.buffer.length * 2))
+      this.buffer.copy(grown, 0, 0, this.used)
+      this.buffer = grown
+    }
+    chunk.copy(this.buffer, this.used)
+    this.used += chunk.length
     const messages: unknown[] = []
     for (;;) {
       const step = this.next()
@@ -57,9 +68,9 @@ export class MessageDecoder {
 
   /** Parse and consume the next complete message, or report that more bytes are needed. */
   private next(): { ready: false } | { ready: true; message: unknown } {
-    const separator = this.buffer.indexOf(HEADER_SEPARATOR)
+    const separator = this.buffer.indexOf(HEADER_SEPARATOR, 0, 'ascii')
     if (separator < 0) {
-      if (this.buffer.length > MAX_HEADER_BYTES) {
+      if (this.used > MAX_HEADER_BYTES) {
         throw new Error(`LSP header exceeded ${MAX_HEADER_BYTES} bytes without a terminator`)
       }
       return { ready: false }
@@ -74,9 +85,12 @@ export class MessageDecoder {
     }
     const bodyStart = separator + HEADER_SEPARATOR.length
     const bodyEnd = bodyStart + contentLength
-    if (this.buffer.length < bodyEnd) return { ready: false }
+    if (this.used < bodyEnd) return { ready: false }
     const body = this.buffer.toString('utf8', bodyStart, bodyEnd)
-    this.buffer = this.buffer.subarray(bodyEnd)
+    // Compact in place: self-copy is overlap-safe, and the total work stays
+    // amortized linear across one push's messages.
+    this.buffer.copy(this.buffer, 0, bodyEnd, this.used)
+    this.used -= bodyEnd
     try {
       return { ready: true, message: JSON.parse(body) }
     } catch (error) {

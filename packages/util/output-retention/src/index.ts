@@ -46,7 +46,13 @@ export type Omitted =
  * The caller receives this after each `push()`.
  */
 export interface PushDecision {
-  /** Was this whole unit / all of this chunk's bytes retained (nothing dropped)? */
+  /**
+   * Was this whole unit / all of this chunk's bytes retained (nothing dropped)?
+   * Point-in-time only: in `tail`/`headTail` mode an early chunk reported
+   * `true` can still slide out of the suffix as later chunks arrive — the
+   * cumulative {@link truncated} and {@link RetainedText.omittedBytes} at
+   * finish() are the authoritative omission facts, never a per-push `kept`.
+   */
   kept: boolean
   /** Cumulative: has the retainer omitted anything due to the budget yet? */
   truncated: boolean
