@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -254,6 +254,21 @@ describe('LocalBashExecutor.start (background process handles)', () => {
     await proc.done
     expect(proc.status).toBe('completed')
     expect(proc.kill()).toBe(false)
+  })
+
+  it('kill() still reaches the tree after the leader exits while a descendant holds its pipes', async () => {
+    const { bash } = await setup()
+    // The shell exits immediately; the detached descendant keeps the
+    // collected pipes open, so done settles through the grace drain.
+    const proc = bash.start(bash.resolve({ command: 'sleep 60 &' }))
+    await proc.done
+    expect(proc.status).toBe('completed')
+    // The tree is still alive, so the handle must remain killable even though
+    // the leader completed.
+    expect(proc.kill()).toBe(true)
+    // The termination reaches the descendant; once the tree is gone, kill()
+    // reports the no-op honestly.
+    await vi.waitFor(() => { expect(proc.kill()).toBe(false) })
   })
 
   it('kill escalation uses the configured graceMs (a TERM-trapping process dies by SIGKILL)', async () => {

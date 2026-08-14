@@ -337,7 +337,9 @@ export class PwshLocalExecutor extends ShellExecutor {
         }
       },
       kill: (): boolean => {
-        if (proc.status !== 'running') return false
+        // A completed leader can leave live descendants holding its pipes:
+        // the handle stays killable until the whole tree is gone.
+        if (proc.status === 'killed' || !running.treeAlive()) return false
         proc.status = 'killed'
         running.terminate()
         return true

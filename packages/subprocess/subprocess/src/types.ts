@@ -191,6 +191,14 @@ export interface SubprocessHandle {
    * @returns `true` when the tree exited, `false` when the signal aborted first.
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
+  /**
+   * Synchronously probe whether the process tree may still contain live
+   * processes. A settled {@link done} does not imply `false`: a leader can
+   * exit while a descendant it spawned still holds the inherited pipes.
+   * @returns `false` only once the tree's exit is confirmed (no more
+   * signalling possible); `true` while a survivor can still be reached.
+   */
+  treeAlive(): boolean
 }
 
 /**
