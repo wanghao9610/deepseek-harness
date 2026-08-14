@@ -213,8 +213,14 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
+  // Startup rollback and the published handle share one process teardown. It
+  // is defined before every fallible setup statement, so a throw between
+  // spawn and the startup try still reaps the process instead of orphaning it.
+  let processDisposal: Promise<void> | undefined
+  const disposeProcess = (): Promise<void> => (processDisposal ??= disposeAcpChild(child, spec.disposeEofGraceMs))
   /* v8 ignore start -- 'pipe' dispositions expose both streams by the seam contract; defensive. */
   if (child.stdin === undefined || child.stdout === undefined) {
+    await disposeProcess()
     throw new Error('subagent-acp: subprocess implementation dropped a piped protocol stream')
   }
   /* v8 ignore stop */
@@ -228,10 +234,6 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     (err: unknown) => Promise.reject(toError(err)),
   )
   spawnFailed.catch(() => { /* observed by the startup race; never unhandled */ })
-
-  // Startup rollback and the published handle share one process teardown.
-  let processDisposal: Promise<void> | undefined
-  const disposeProcess = (): Promise<void> => (processDisposal ??= disposeAcpChild(child, spec.disposeEofGraceMs))
 
   // ACP exposes no complete assistant messages, so the shared fold selects its
   // accumulated assistant text.
@@ -263,13 +265,20 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     },
   })
 
-  const conn = new ClientSideConnection(
-    makeClient,
-    ndJsonStream(
-      NodeWritable.toWeb(child.stdin) as WritableStream<Uint8Array>,
-      NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-    ),
-  )
+  let conn: ClientSideConnection
+  try {
+    conn = new ClientSideConnection(
+      makeClient,
+      ndJsonStream(
+        NodeWritable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+        NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+      ),
+    )
+  } catch (error) {
+    // The connection never came to own the child: reap it before surfacing.
+    await disposeProcess()
+    throw error
+  }
 
   let sessionId: string | undefined
   // Cancellation settles the result without waiting for a cooperative child.
