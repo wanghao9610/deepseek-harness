@@ -299,6 +299,28 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Plugins register direct human commands without sending invocations to the model.',
   },
   {
+    key: 'tui',
+    pkg: 'tui',
+    title: 'Terminal overlay surface',
+    mode: 'core',
+    note: 'A mounted terminal front door lets other plugins queue keyboard overlays into its modal queue without reaching pi-tui, the terminal, or focus.',
+  },
+  {
+    key: 'tuiPrompt',
+    pkg: 'tui',
+    title: 'Terminal prompt values',
+    mode: 'core',
+    note: 'Plugins register named fragments the terminal status rows interpolate, and set them as their own state changes.',
+  },
+  {
+    key: 'tuiResumeHost',
+    pkg: 'tui',
+    title: 'Terminal resume handoff',
+    mode: 'core',
+    consumers: ['tui-app'],
+    note: 'The owning process, not a plugin, replaces itself with the selected session so a resumed session runs in its own workspace directory.',
+  },
+  {
     key: 'sessionProjections',
     pkg: 'session-projection',
     title: 'Session projection units',

@@ -7,6 +7,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { readSshTargets, type SshTarget } from '@deepseek-ai/dsh-ssh-launch'
 import { normalizeGeometry, type Rect, type WindowGeometry } from './window-state.ts'
 
 /** The stored document, in whatever shape a previous version wrote it. */
@@ -54,6 +55,39 @@ export class SettingsStore {
    */
   writeIdleSuspend(enabled: boolean): void {
     this.write({ ...this.read(), idleSuspend: enabled })
+  }
+
+  /**
+   * The remote hosts this shell can serve a runtime from.
+   * @returns the stored connections, minus any entry this build cannot use.
+   */
+  readConnections(): readonly SshTarget[] {
+    return readSshTargets(this.read().connections)
+  }
+
+  /**
+   * Replace the stored connections.
+   * @param connections - the connections to persist, in display order.
+   */
+  writeConnections(connections: readonly SshTarget[]): void {
+    this.write({ ...this.read(), connections })
+  }
+
+  /**
+   * The connection the shell serves from.
+   * @returns the chosen connection's identifier, or `undefined` for this machine.
+   */
+  readActiveConnection(): string | undefined {
+    const stored = this.read().activeConnection
+    return typeof stored === 'string' && stored.length > 0 ? stored : undefined
+  }
+
+  /**
+   * Remember which connection the shell serves from.
+   * @param id - the connection's identifier, or `undefined` for this machine.
+   */
+  writeActiveConnection(id: string | undefined): void {
+    this.write({ ...this.read(), activeConnection: id ?? null })
   }
 
   /**

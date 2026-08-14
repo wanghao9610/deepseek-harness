@@ -20,7 +20,7 @@ import clsx from 'clsx'
 import {
   BrandWordmark, FishLogo,
   IconNewChatOutline16, IconPanelLeftOutline16,
-  Tooltip,
+  shortcutLabel, Tooltip, useShortcut,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
@@ -58,6 +58,15 @@ export function SidebarRoot({
     return () => { window.clearTimeout(timer) }
   }, [collapsed])
   const wide = !collapsed || !settled
+
+  // The column carries the New Session entry points, so it carries the chord
+  // for them; the collapsed rail answers it as the expanded column does.
+  useShortcut('k', () => { startSession() })
+
+  // Collapsing is the column's own geometry, so the chord is the column's too.
+  // It toggles rather than collapses: the rail has no second key to come back
+  // with, and the button under it is the same one in both states.
+  useShortcut('b', () => { toggleSidebar() })
 
   // Freeze the content at its expanded width while it fades out (collapsed
   // && wide): the sliding column then clips it instead of reflowing it. The
@@ -142,7 +151,7 @@ export function SidebarRoot({
         )}
         {/* Rail resting state is the whale mark; hovering swaps in the panel
             icon (the expand affordance, figma sidebar-hover flow). */}
-        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+        <Tooltip label={`${collapsed ? t('toggle.open') : t('toggle.collapse')} ${shortcutLabel('b')}`} delayMs={500}>
           <button
             type="button"
             className={clsx(css.iconButton, css.toggle)}
@@ -156,8 +165,9 @@ export function SidebarRoot({
         </Tooltip>
       </div>
 
-      {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-      <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>
+      {/* The tooltip rides both column states, because it carries the chord —
+          which the expanded button's own label does not. */}
+      <Tooltip label={`${t('session.new.label')} ${shortcutLabel('k')}`} delayMs={500}>
         <button
           type="button"
           className={css.newSession}

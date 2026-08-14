@@ -6,7 +6,7 @@
 
 import { join } from 'node:path'
 
-/** Directory under `Contents/Resources` holding the deployed harness closure. */
+/** Directory under the Electron `resources` tree holding the deployed harness closure. */
 export const RUNTIME_DIRECTORY = 'backend'
 
 /** Path of the `dsh` launcher inside a deployed closure, relative to its root. */

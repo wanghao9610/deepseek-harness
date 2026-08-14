@@ -28,6 +28,8 @@ export interface CommandOptions {
   prefix: string
   /** Print the command instead of running it. */
   dryRun: boolean
+  /** Extra environment variables merged over `CI=true`. */
+  extraEnv?: NodeJS.ProcessEnv
 }
 
 /** What one closure deployment needs. */
@@ -77,7 +79,7 @@ export async function runCommand(options: CommandOptions): Promise<void> {
       cwd: options.cwd,
       stdio: 'inherit',
       // Artifact builds must not mutate or validate a developer's Git hooks.
-      env: { ...process.env, CI: 'true' },
+      env: { ...process.env, CI: 'true', ...options.extraEnv },
     })
     child.once('error', (error) => {
       reject(new Error(`${options.prefix}: ${options.label} failed to spawn: ${error.message} (${printable})`))
@@ -96,11 +98,14 @@ export async function runCommand(options: CommandOptions): Promise<void> {
 /**
  * Deploy one workspace package's production closure into a symlink-free tree.
  *
- * The four deploy flags are load-bearing: `--legacy` is the mandatory path
- * with workspace injection off; a hoisted linker gives one flat instance of
- * every package; disabling automatic peer installation keeps undeclared peers
- * from expanding the closure; and linking workspace packages selects the
- * in-repository sources over anything a registry would resolve.
+ * The deploy flags are load-bearing: `--legacy` is the mandatory path with
+ * workspace injection off; a hoisted linker gives one flat instance of every
+ * package; disabling automatic peer installation keeps undeclared peers from
+ * expanding the closure; linking workspace packages selects the in-repository
+ * sources over anything a registry would resolve; and unused patches are
+ * allowed because a filtered `--prod` deploy of one package does not install
+ * every patched dependency the root workspace declares. The full-workspace
+ * install still fails on unused patches.
  * @param options - deploy root, destination, and diagnostics.
  */
 export async function deployWorkspaceClosure(options: DeployClosureOptions): Promise<void> {
@@ -109,27 +114,31 @@ export async function deployWorkspaceClosure(options: DeployClosureOptions): Pro
   }
   if (options.dryRun) console.log(`${options.prefix}: [dry-run] rm -rf ${options.staging}`)
   else await rm(options.staging, { recursive: true, force: true })
-  await runCommand({
-    label: 'deploy',
-    command: pnpmBin(),
-    args: [
-      '--filter',
-      options.packageName,
-      'deploy',
-      '--legacy',
-      '--prod',
-      '--config.node-linker=hoisted',
-      '--config.auto-install-peers=false',
-      '--config.link-workspace-packages=true',
-      options.staging,
-    ],
-    cwd: options.root,
-    prefix: options.prefix,
-    dryRun: options.dryRun,
-  })
-  await restoreLegacyHoists(options)
-  await materializeStagedLinks(options)
-  await restoreWorkspaceInstallState(options)
+  try {
+    await runCommand({
+      label: 'deploy',
+      command: pnpmBin(),
+      args: [
+        '--filter',
+        options.packageName,
+        'deploy',
+        '--legacy',
+        '--prod',
+        '--config.node-linker=hoisted',
+        '--config.auto-install-peers=false',
+        '--config.link-workspace-packages=true',
+        '--config.allowUnusedPatches=true',
+        options.staging,
+      ],
+      cwd: options.root,
+      prefix: options.prefix,
+      dryRun: options.dryRun,
+    })
+    await restoreLegacyHoists(options)
+    await materializeStagedLinks(options)
+  } finally {
+    await restoreWorkspaceInstallState(options)
+  }
 }
 
 /**

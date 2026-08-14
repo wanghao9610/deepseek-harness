@@ -7,6 +7,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { localRuntimeLaunch, remoteRuntimeLaunch } from '../src/runtime-launch.ts'
 import { RuntimeSupervisor, type RuntimeState, type RuntimeSupervisorOptions } from '../src/runtime-supervisor.ts'
 
 /**
@@ -24,6 +25,25 @@ const FAILING_RUNTIME = `
 process.stderr.write('cannot mount the plugin tree\\n')
 process.exit(3)
 `
+
+/** The ports a carried launch is tested against. */
+const CARRIED_PORTS = { local: 51_000, remote: 52_000 }
+
+/**
+ * A stand-in for the ssh session that carries a remote runtime: it reports an
+ * address and ends when its stdin closes, exactly as the remote script does
+ * through the session.
+ * @param reported - the address the far side reports serving on.
+ * @returns the script body.
+ */
+function carriedRuntime(reported: string): string {
+  return `
+process.stdin.resume()
+process.stdin.on('end', () => { process.exit(0) })
+process.stdout.write('dsh web: ${reported}\\n')
+setInterval(() => {}, 1000)
+`
+}
 
 let directory: string
 
@@ -56,16 +76,41 @@ function supervise(entry: string, limits?: RuntimeSupervisorOptions['limits']) {
   const states: RuntimeState[] = []
   let output = ''
   const supervisor = new RuntimeSupervisor({
-    entry,
-    nodePath: process.execPath,
+    prepareLaunch: () => Promise.resolve(
+      localRuntimeLaunch({ entry, nodePath: process.execPath, maxOldSpaceMb: 512 }),
+    ),
     cwd: directory,
     env: { PATH: process.env.PATH ?? '' },
-    maxOldSpaceMb: 512,
     onOutput: (chunk) => { output += chunk },
     ...limits !== undefined && { limits },
   })
   supervisor.subscribe(state => states.push(state))
   return { supervisor, states, output: () => output }
+}
+
+/**
+ * Build a supervisor over a stand-in for a carried remote runtime: the real
+ * remote launch, with its `ssh` command line replaced by the stand-in, so the
+ * address mapping, the stop that closes stdin, and the explanation under test
+ * are the ones that ship.
+ * @param entry - the stand-in carrier path.
+ * @returns the supervisor and the recorded transitions.
+ */
+function superviseCarried(entry: string) {
+  const base = remoteRuntimeLaunch({
+    target: { id: 'box', label: 'Dev box', host: 'dev-box' },
+    ports: CARRIED_PORTS,
+  })
+  const states: RuntimeState[] = []
+  const supervisor = new RuntimeSupervisor({
+    prepareLaunch: () => Promise.resolve({ ...base, command: process.execPath, args: [entry] }),
+    cwd: directory,
+    env: { PATH: process.env.PATH ?? '' },
+    onOutput: () => {},
+    limits: { healthyUptimeMs: 60_000, baseDelayMs: 1, maxDelayMs: 2, maxConsecutiveFailures: 2 },
+  })
+  supervisor.subscribe(state => states.push(state))
+  return { supervisor, states }
 }
 
 /**
@@ -123,7 +168,8 @@ describe('RuntimeSupervisor', () => {
     })
     supervisor.start()
     const failure = await waitFor(supervisor, state => state.status === 'failed')
-    expect(failure).toEqual({ status: 'failed', reason: expect.stringContaining('3 times in a row') })
+    if (failure.status !== 'failed') throw new Error(`expected a failure, got ${failure.status}`)
+    expect(failure.reason).toContain('3 times in a row')
     expect(states.filter(state => state.status === 'restarting')).toHaveLength(2)
   })
 
@@ -158,5 +204,40 @@ describe('RuntimeSupervisor', () => {
     const { supervisor } = supervise(await writeRuntime(SERVING_RUNTIME))
     await supervisor.stop()
     expect(supervisor.current).toEqual({ status: 'stopped' })
+  })
+
+  it('sends the window to the forwarded port and stops the carrier by closing its stdin', async () => {
+    const { supervisor, states } = superviseCarried(await writeRuntime(carriedRuntime('http://127.0.0.1:52000')))
+    supervisor.start()
+    await waitFor(supervisor, state => state.status === 'ready')
+    expect(supervisor.url).toBe('http://127.0.0.1:51000')
+    await supervisor.stop()
+    expect(supervisor.current).toEqual({ status: 'stopped' })
+    expect(states.map(state => state.status)).toEqual(['starting', 'ready', 'stopped'])
+  })
+
+  it('shows what a slow start is doing, and stops showing it once the runtime serves', async () => {
+    const runtime = await writeRuntime(`
+process.stdin.resume()
+process.stdin.on('end', () => { process.exit(0) })
+process.stderr.write('dsh-remote: installing @deepseek-ai/dsh@latest\\n')
+setTimeout(() => { process.stdout.write('dsh web: http://127.0.0.1:52000\\n') }, 60)
+setInterval(() => {}, 1000)
+`)
+    const { supervisor, states } = superviseCarried(runtime)
+    supervisor.start()
+    await waitFor(supervisor, state => state.status === 'ready')
+    await supervisor.stop()
+    expect(states.map(state => state.status === 'starting' ? state.detail : state.status))
+      .toEqual([undefined, 'installing @deepseek-ai/dsh@latest', 'ready', 'stopped'])
+  })
+
+  it('fails without restarting when the runtime serves an address this shell cannot reach', async () => {
+    const { supervisor, states } = superviseCarried(await writeRuntime(carriedRuntime('http://127.0.0.1:3080')))
+    supervisor.start()
+    const failure = await waitFor(supervisor, state => state.status === 'failed')
+    if (failure.status !== 'failed') throw new Error(`expected a failure, got ${failure.status}`)
+    expect(failure.reason).toContain('forwarded to this machine')
+    expect(states.filter(state => state.status === 'restarting')).toHaveLength(0)
   })
 })

@@ -231,6 +231,29 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
     await feedList(second, [{ id: 's1' }])
     expect(second.svc.list.getSnapshot().current).toBe('s1')
   })
+
+  it('a window opened as a new one drops the restored selection instead of joining it', async () => {
+    const storage = new Map<string, string>([
+      ['dsh.sessions.current', JSON.stringify({ sessionId: 's1' })],
+    ])
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => storage.get(k) ?? null,
+      setItem: (k: string, v: string) => { storage.set(k, v) },
+    })
+    try {
+      const ctx = new Context()
+      const api = new FakeApiClient()
+      const svc = new SessionRuntime(ctx, api, fakeRemote(), undefined, { freshSession: true })
+      const b = { ctx, api, svc }
+      await feedList(b, [{ id: 's1' }])
+      // The restored id validates against the list and is still not opened:
+      // this window is owed one of its own.
+      expect(svc.list.getSnapshot().current).toBeUndefined()
+      expect(api.calls.filter(c => c.method === 'session.history')).toHaveLength(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
 
 describe('cell (render-layer session kit)', () => {

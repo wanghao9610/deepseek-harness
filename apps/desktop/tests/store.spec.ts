@@ -68,4 +68,37 @@ describe('SettingsStore', () => {
     store.writeIdleSuspend(true)
     expect(store.readIdleSuspend()).toBe(true)
   })
+
+  it('serves this machine and no connections until some are stored', () => {
+    const store = new SettingsStore(path)
+    expect(store.readConnections()).toEqual([])
+    expect(store.readActiveConnection()).toBeUndefined()
+  })
+
+  it('keeps connections and the chosen one across restarts', () => {
+    const store = new SettingsStore(path)
+    store.writeConnections([{ id: 'box', label: 'Dev box', host: 'dev-box', port: 2222 }])
+    store.writeActiveConnection('box')
+    const reopened = new SettingsStore(path)
+    expect(reopened.readConnections()).toEqual([{ id: 'box', label: 'Dev box', host: 'dev-box', port: 2222 }])
+    expect(reopened.readActiveConnection()).toBe('box')
+  })
+
+  it('returns to this machine when the choice is cleared', () => {
+    const store = new SettingsStore(path)
+    store.writeActiveConnection('box')
+    store.writeActiveConnection(undefined)
+    expect(new SettingsStore(path).readActiveConnection()).toBeUndefined()
+  })
+
+  it('drops a stored connection this build cannot use, keeping the rest', async () => {
+    const store = new SettingsStore(path)
+    store.writeConnections([{ id: 'box', label: 'Dev box', host: 'dev-box' }])
+    const document = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+    await writeFile(path, JSON.stringify({
+      ...document,
+      connections: [{ id: 'broken', label: 'Broken' }, ...document.connections as unknown[]],
+    }))
+    expect(new SettingsStore(path).readConnections().map(entry => entry.id)).toEqual(['box'])
+  })
 })

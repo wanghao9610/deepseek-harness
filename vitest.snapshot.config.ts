@@ -51,6 +51,9 @@ export default defineConfig({
       ...(process.env.DSH_EXAMPLE_MODE === 'lib' ? ['apps/web/tests/**/*.snapshot.ts'] : []),
       'apps/cli/tests/**/*.snapshot.ts',
       'examples/*/tests/**/*.snapshot.ts',
+      // The shipped TUI's terminal-state scenarios render through a headless
+      // xterm rather than a subprocess; they replay keylessly like the rest.
+      'packages/tui/*/tests/**/*.snapshot.ts',
     ],
     // Replay never writes committed outputs and every scenario owns its
     // mutable runtime state (the subprocess suites use a unique temp dir and

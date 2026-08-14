@@ -11,6 +11,7 @@
     --text: #1b1b1f;
     --muted: #6b6b76;
     --accent: #4d6bfe;
+    --danger: #c0392b;
     --panel: #ffffff;
     --border: rgb(0 0 0 / 0.08);
   }
@@ -19,6 +20,7 @@
       --surface: #101014;
       --text: #ececf1;
       --muted: #9a9aa6;
+      --danger: #ff7a6b;
       --panel: #1a1a20;
       --border: rgb(255 255 255 / 0.09);
     }
@@ -86,8 +88,8 @@
     -webkit-user-select: text;
     user-select: text;
   }
-  .actions { display: none; margin-top: 20px; gap: 8px; justify-content: center; }
-  a.button {
+  .actions { display: none; margin-top: 20px; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  a.button, button {
     appearance: none;
     padding: 6px 14px;
     border-radius: 7px;
@@ -95,12 +97,74 @@
     background: var(--panel);
     color: var(--text);
     text-decoration: none;
+    font: inherit;
     font-size: 12px;
+    cursor: default;
   }
-  a.button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  a.button.primary, button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  button.quiet { background: none; border-color: transparent; color: var(--muted); }
+  button.quiet.remove:hover { color: var(--danger); }
   body.failed .track { display: none; }
-  body.failed .detail, body.failed .actions { display: flex; }
   body.failed .detail { display: block; }
+  body.failed .actions, body.waiting .actions { display: flex; }
+
+  /* The connection surface replaces the centered boot card entirely. */
+  body.connections { place-items: start center; overflow-y: auto; padding: 26px 0 40px; }
+  body.connections main { display: none; }
+  #connections { display: none; width: min(560px, calc(100vw - 56px)); }
+  body.connections #connections { display: block; }
+  #connections h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  #connections .hint { margin-bottom: 18px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+    margin-bottom: 18px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 7px;
+  }
+  .row + .row { border-top: 1px solid var(--border); border-radius: 0; }
+  .row .who { flex: 1; min-width: 0; }
+  .row .name { font-weight: 500; }
+  .row .where {
+    color: var(--muted);
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .badge {
+    font-size: 11px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 20px;
+    padding: 1px 8px;
+  }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .field input[type="text"] {
+    width: 100%;
+    padding: 6px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .field .note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .field .problem { font-size: 11px; color: var(--danger); margin-top: 4px; }
+  .pair { display: flex; gap: 12px; }
+  .pair .field { flex: 1; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -110,29 +174,356 @@
   <p id="message">Preparing the agent runtime…</p>
   <div class="track"></div>
   <div class="detail" id="detail"></div>
-  <div class="actions">
-    <a class="button primary" href="dsh-action:retry">Try Again</a>
-    <a class="button" href="dsh-action:open-log">Reveal Log</a>
-    <a class="button" href="dsh-action:quit">Quit</a>
-  </div>
+  <div class="actions" id="actions"></div>
 </main>
+
+<section id="connections">
+  <h2>Connections</h2>
+  <p class="hint">The window stays here; everything else — files, commands, terminals — happens on the host you pick.</p>
+  <div class="card" id="list"></div>
+
+  <h2 id="form-title">Add a host</h2>
+  <p class="hint">This shell cannot answer a password prompt, so the host has to accept an ssh-agent identity or an unencrypted key file.</p>
+  <div class="card" style="padding: 14px;">
+    <div class="field">
+      <label for="label">Name</label>
+      <input type="text" id="label" placeholder="Dev box">
+      <div class="problem" id="problem-label"></div>
+    </div>
+    <div class="pair">
+      <div class="field">
+        <label for="host">Host</label>
+        <input type="text" id="host" placeholder="dev-box or 10.0.0.4 or an ssh config alias">
+        <div class="problem" id="problem-host"></div>
+      </div>
+      <div class="field" style="max-width: 108px;">
+        <label for="port">SSH port</label>
+        <input type="text" id="port" placeholder="22">
+        <div class="problem" id="problem-port"></div>
+      </div>
+    </div>
+    <div class="pair">
+      <div class="field">
+        <label for="user">User</label>
+        <input type="text" id="user" placeholder="from your ssh config">
+        <div class="problem" id="problem-user"></div>
+      </div>
+      <div class="field">
+        <label for="identityFile">Private key</label>
+        <input type="text" id="identityFile" placeholder="from your ssh config">
+        <div class="problem" id="problem-identityFile"></div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="jumpHosts">Jump hosts</label>
+      <input type="text" id="jumpHosts" placeholder="bastion, edge — comma separated">
+      <div class="problem" id="problem-jumpHosts"></div>
+    </div>
+    <div class="field">
+      <label>dsh on the host</label>
+      <label class="toggle"><input type="radio" name="launcherKind" id="launcher-managed" value="managed" checked> Install it for me, and keep it in <code>~/.dsh-remote</code></label>
+      <label class="toggle"><input type="radio" name="launcherKind" id="launcher-archive" value="archive"> Send a server payload from this machine — for a host with no network</label>
+      <label class="toggle"><input type="radio" name="launcherKind" id="launcher-host" value="host"> Use the dsh already on the host</label>
+      <div class="problem" id="problem-launcher"></div>
+    </div>
+    <div class="field" id="archive-field">
+      <label for="launcherArchive">Server payload</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="launcherArchive" placeholder="dsh-server-Linux-x86_64-….tar.gz" style="flex: 1;">
+        <button type="button" id="pick-payload">Choose…</button>
+      </div>
+      <div class="note">Built on a machine matching the host: <code>pnpm run package:remote-server</code>. Sent over the same connection, once.</div>
+    </div>
+    <div class="pair">
+      <div class="field" id="managed-field">
+        <label for="launcherVersion">Version to install</label>
+        <input type="text" id="launcherVersion" placeholder="latest">
+        <div class="note">An npm version or dist-tag. Changing it is what moves the host; nothing upgrades on its own.</div>
+      </div>
+      <div class="field" id="host-field">
+        <label for="launcherCommand">dsh command</label>
+        <input type="text" id="launcherCommand" placeholder="dsh">
+        <div class="note">An absolute path when it is not on the login PATH.</div>
+      </div>
+      <div class="field">
+        <label for="remoteCwd">Project directory</label>
+        <input type="text" id="remoteCwd" placeholder="the login directory">
+        <div class="problem" id="problem-remoteCwd"></div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="remoteHome">Server directory on the host</label>
+      <input type="text" id="remoteHome" placeholder="~/.dsh-server">
+      <div class="note">Holds the installation and this connection's sessions, storages, and settings. Removing it undoes every visit.</div>
+      <div class="problem" id="problem-remoteHome"></div>
+    </div>
+    <div class="field">
+      <label class="toggle"><input type="checkbox" id="loginShell" checked> Resolve the command through a login shell</label>
+    </div>
+    <div class="form-actions">
+      <button type="button" id="reset">Clear</button>
+      <button type="button" class="primary" id="save">Save host</button>
+    </div>
+  </div>
+
+  <div class="form-actions" style="justify-content: space-between;">
+    <button type="button" id="reveal-log">Reveal Log</button>
+    <button type="button" class="primary" id="done">Done</button>
+  </div>
+</section>
+
 <script>
   const params = new URLSearchParams(location.search)
   const state = params.get('state') ?? 'starting'
-  const headline = document.getElementById('headline')
-  const message = document.getElementById('message')
-  if (state === 'failed') {
-    document.body.classList.add('failed')
-    headline.textContent = 'The harness runtime could not start'
-    message.textContent = 'The log below is what the runtime reported.'
-    document.getElementById('detail').textContent = params.get('reason') ?? 'No reason was reported.'
-  } else if (state === 'restarting') {
-    headline.textContent = 'Restarting the harness runtime'
-    message.textContent = 'The runtime stopped and is being started again…'
-  } else if (state === 'stopped') {
-    headline.textContent = 'The harness runtime is stopped'
-    message.textContent = 'Starting it again…'
+
+  /** Ask the shell to run one action; the main process intercepts this scheme. */
+  function act(name, query) {
+    const search = query === undefined ? '' : `?${new URLSearchParams(query).toString()}`
+    location.href = `dsh-action:${name}${search}`
   }
+
+  /** Identifier of the connection the form is editing; absent while adding one. */
+  let editing
+
+  if (state === 'connections') {
+    document.body.classList.add('connections')
+    renderConnections()
+  } else {
+    const headline = document.getElementById('headline')
+    const message = document.getElementById('message')
+    const note = params.get('note')
+    document.body.classList.add(state === 'failed' ? 'failed' : 'waiting')
+    if (state === 'failed') {
+      headline.textContent = 'The harness runtime could not start'
+      message.textContent = 'The log below is what the runtime reported.'
+      document.getElementById('detail').textContent = note ?? 'No reason was reported.'
+    } else if (state === 'restarting') {
+      headline.textContent = 'Restarting the harness runtime'
+      message.textContent = 'The runtime stopped and is being started again…'
+    } else if (state === 'stopped') {
+      headline.textContent = 'The harness runtime is not running'
+      message.textContent = 'Start it again, or pick another host.'
+    } else if (note !== null) {
+      // A first connection installs dsh on the host, which takes long enough
+      // that a window showing only a spinner looks stalled.
+      message.textContent = `${note}…`
+    }
+    renderActions(state)
+  }
+
+  /**
+   * Put the buttons this state answers to on screen.
+   *
+   * Every waiting state has them, not only a failure: a first connection to a
+   * host installs dsh there, which takes minutes, and a window with no way out
+   * of that leaves force-quitting as the only exit.
+   */
+  function renderActions(state) {
+    const waiting = state === 'starting' || state === 'restarting'
+    const buttons = [
+      ...state === 'failed' ? [['Try Again', 'retry', true]] : [],
+      ...state === 'stopped' ? [['Start', 'retry', true]] : [],
+      ...waiting ? [['Stop', 'cancel-start', false]] : [],
+      ['Connections…', 'manage-connections', false],
+      ['Reveal Log', 'open-log', false],
+      ['Quit', 'quit', false],
+    ]
+    const row = document.getElementById('actions')
+    for (const [label, name, primary] of buttons) {
+      const link = document.createElement('a')
+      link.className = primary ? 'button primary' : 'button'
+      link.href = `dsh-action:${name}`
+      link.textContent = label
+      row.append(link)
+    }
+  }
+
+  function renderConnections() {
+    let view = { targets: [], activeId: null, problems: {} }
+    try {
+      view = JSON.parse(params.get('connections') ?? '{}')
+    } catch {
+      // The shell writes this payload; an unreadable one means an empty list,
+      // which the surface can still add a host to.
+    }
+    const targets = Array.isArray(view.targets) ? view.targets : []
+    const problems = view.problems ?? {}
+
+    const list = document.getElementById('list')
+    list.append(connectionRow({
+      name: 'This machine',
+      where: 'the runtime runs beside this window',
+      active: view.activeId === null || view.activeId === undefined,
+      connect: () => { act('connect') },
+    }))
+    for (const target of targets) {
+      list.append(connectionRow({
+        name: target.label,
+        where: describe(target),
+        active: view.activeId === target.id,
+        connect: () => { act('connect', { target: target.id }) },
+        edit: () => { fill(target) },
+        remove: () => { act('remove-connection', { target: target.id }) },
+      }))
+    }
+
+    for (const [field, message] of Object.entries(problems)) {
+      const slot = document.getElementById(`problem-${field}`)
+      if (slot !== null) slot.textContent = message
+    }
+
+    for (const id of ['launcher-managed', 'launcher-host', 'launcher-archive']) {
+      document.getElementById(id).addEventListener('change', showLauncherFields)
+    }
+    showLauncherFields()
+    document.getElementById('save').addEventListener('click', save)
+    document.getElementById('pick-payload').addEventListener('click', () => {
+      // The shell owns the file dialog; it comes back with the same draft plus
+      // the chosen path, so nothing typed so far is lost.
+      act('pick-payload', { payload: JSON.stringify(currentDraft()) })
+    })
+    document.getElementById('reset').addEventListener('click', () => { fill(undefined) })
+    document.getElementById('done').addEventListener('click', () => { act('close-connections') })
+    document.getElementById('reveal-log').addEventListener('click', () => { act('open-log') })
+
+    // A rejected edit comes back with what was typed, so the problems below the
+    // fields are about values the person can still see.
+    if (view.draft !== undefined && view.draft !== null) fill(view.draft, true)
+  }
+
+  /** The connection summary shown under its name. */
+  function describe(target) {
+    const where = `${target.user === undefined ? '' : `${target.user}@`}${target.host}${target.port === undefined ? '' : `:${target.port}`}`
+    const from = target.launcher?.kind === 'host' ? target.launcher.command : `dsh@${target.launcher?.version ?? 'latest'}`
+    return `${where}${target.remoteCwd === undefined ? '' : ` · ${target.remoteCwd}`} · ${from}`
+  }
+
+  /** One row of the connection list. */
+  function connectionRow(row) {
+    const element = document.createElement('div')
+    element.className = 'row'
+    const who = document.createElement('div')
+    who.className = 'who'
+    const name = document.createElement('div')
+    name.className = 'name'
+    name.textContent = row.name
+    const where = document.createElement('div')
+    where.className = 'where'
+    where.textContent = row.where
+    who.append(name, where)
+    element.append(who)
+    if (row.active) {
+      const badge = document.createElement('span')
+      badge.className = 'badge'
+      badge.textContent = 'Serving'
+      element.append(badge)
+    } else {
+      element.append(button('Connect', 'primary', row.connect))
+    }
+    if (row.edit !== undefined) element.append(button('Edit', 'quiet', row.edit))
+    if (row.remove !== undefined) element.append(button('Remove', 'quiet remove', row.remove))
+    return element
+  }
+
+  /** A button that runs one callback. */
+  function button(label, variant, onClick) {
+    const element = document.createElement('button')
+    element.type = 'button'
+    element.className = variant
+    element.textContent = label
+    element.addEventListener('click', onClick)
+    return element
+  }
+
+  /**
+   * Load one connection into the form, or clear it. The values arrive either
+   * from a stored connection or from a rejected edit, which is still the text
+   * the person typed.
+   */
+  function fill(target, keepProblems) {
+    editing = target?.id
+    const named = target?.label === undefined || target.label === '' ? 'this host' : target.label
+    document.getElementById('form-title').textContent = target === undefined ? 'Add a host' : `Edit ${named}`
+    for (const field of ['label', 'host', 'user', 'identityFile', 'remoteCwd', 'remoteHome']) {
+      document.getElementById(field).value = target?.[field] ?? ''
+    }
+    const launcher = target?.launcher
+    const kind = launcher === undefined || launcher === null ? 'managed' : launcher.kind
+    document.getElementById(`launcher-${kind === 'host' || kind === 'archive' ? kind : 'managed'}`).checked = true
+    document.getElementById('launcherVersion').value = kind === 'managed' ? launcher?.version ?? '' : ''
+    document.getElementById('launcherCommand').value = kind === 'host' ? launcher.command ?? '' : ''
+    document.getElementById('launcherArchive').value = kind === 'archive' ? launcher.path ?? '' : ''
+    showLauncherFields()
+    const port = target?.port
+    document.getElementById('port').value = port === undefined || port === null ? '' : String(port)
+    const jumps = target?.jumpHosts
+    document.getElementById('jumpHosts').value = Array.isArray(jumps) ? jumps.join(', ') : jumps ?? ''
+    document.getElementById('loginShell').checked = target?.loginShell !== false && target?.loginShell !== 'false'
+    if (keepProblems !== true) {
+      for (const slot of document.querySelectorAll('.problem')) slot.textContent = ''
+    }
+    window.scrollTo({ top: document.body.scrollHeight })
+  }
+
+  /** Show the field the chosen launcher needs, and hide the others. */
+  function showLauncherFields() {
+    const kind = chosenLauncherKind()
+    document.getElementById('managed-field').style.display = kind === 'managed' ? '' : 'none'
+    document.getElementById('host-field').style.display = kind === 'host' ? '' : 'none'
+    document.getElementById('archive-field').style.display = kind === 'archive' ? '' : 'none'
+  }
+
+  /** Which launcher the radios currently name. */
+  function chosenLauncherKind() {
+    if (document.getElementById('launcher-host').checked) return 'host'
+    if (document.getElementById('launcher-archive').checked) return 'archive'
+    return 'managed'
+  }
+
+  /** Everything the form currently holds, as the shell reads it. */
+  function currentDraft() {
+    const draft = { loginShell: String(document.getElementById('loginShell').checked) }
+    if (editing !== undefined) draft.id = editing
+    for (const field of ['label', 'host', 'user', 'port', 'identityFile', 'jumpHosts', 'remoteCwd', 'remoteHome']) {
+      draft[field] = document.getElementById(field).value
+    }
+    draft.launcherKind = chosenLauncherKind()
+    draft.launcherVersion = document.getElementById('launcherVersion').value
+    draft.launcherCommand = document.getElementById('launcherCommand').value
+    draft.launcherArchive = document.getElementById('launcherArchive').value
+    return draft
+  }
+
+  /** Send the form to the shell, which validates and stores it. */
+  function save() {
+    act('save-connection', { payload: JSON.stringify(currentDraft()) })
+  }
+
+  // Keys this surface answers itself. They mean something only while the shell
+  // is showing this page, which is what keeps them off the application menu,
+  // and each one drives the control it names so the pointer and the keyboard
+  // take the same path.
+  document.addEventListener('keydown', (event) => {
+    if (state === 'connections') {
+      if (event.key === 'Escape') document.getElementById('done').click()
+      else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey || event.target instanceof HTMLInputElement)) {
+        document.getElementById('save').click()
+      }
+      return
+    }
+    // Escape leaves whatever the window is waiting on, which is the way out of
+    // an install that takes minutes.
+    if (event.key === 'Escape') {
+      const stop = document.querySelector('.actions a[href="dsh-action:cancel-start"]')
+      if (stop !== null) stop.click()
+      return
+    }
+    // Only while nothing else holds focus: a focused button already answers
+    // Enter with itself.
+    if (state === 'failed' && event.key === 'Enter' && event.target === document.body) {
+      document.querySelector('.actions a.primary').click()
+    }
+  })
 </script>
 </body>
 </html>

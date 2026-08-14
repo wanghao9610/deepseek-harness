@@ -15,6 +15,7 @@ import type { ConversationSnapshot } from './sessions/conversation.ts'
 import type { UseProjection } from './sessions/projection-store.ts'
 import { ConversationEventRegistry } from './conversation/event-registry.ts'
 import { ConversationViewRegistry } from './conversation/view-registry.ts'
+import { consumeWindowBoot } from './window-boot.ts'
 
 export { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 
@@ -192,13 +193,16 @@ export function apply(ctx: Context): void {
     views: new ConversationViewRegistry(ctx),
   }
   const connection = ctx.get('connection') as ConnectionHandle
-  const sessions = new SessionRuntime(ctx, connection.api, ctx.remote, conversation)
+  // Read once per page: the directives are spent on the first read, and both
+  // domains answer the same window.
+  const boot = consumeWindowBoot()
+  const sessions = new SessionRuntime(ctx, connection.api, ctx.remote, conversation, boot)
   ctx.typert.contexts.registerClient('agent', {
     identity: candidate => sessions.scopeOf(candidate),
   })
   const workspaces = new WorkspaceRuntime(ctx, connection.api, sessions)
   ctx.effect(
-    () => workspaces.startInitialSelection(),
+    () => workspaces.startInitialSelection(boot),
     'runtime: initial Workspace selection',
   )
   const loop = connection.start({

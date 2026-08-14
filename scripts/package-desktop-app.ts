@@ -1,21 +1,26 @@
 /**
- * Build the macOS desktop application.
+ * Build the desktop application.
  *
  * The product is self-contained: the Electron shell, the Electron runtime, and
  * a deployed harness closure the shell supervises, with no dependency on a
  * checkout, a Node installation, or a package manager on the target machine.
- * The pipeline deploys that closure, proves it boots before packaging it, packs
- * the shell around it, ad-hoc signs the result — required on Apple silicon,
- * where a modified bundle without a signature is killed at launch — and writes
- * the disk image.
+ * The pipeline deploys that closure, proves it boots when the target is this
+ * machine, packs the shell around it, and writes the installer — a disk image
+ * on macOS, an NSIS setup on Windows. macOS additionally ad-hoc signs the
+ * bundle, which packaging invalidates and Apple silicon requires.
  *
- * Usage: `pnpm run package:desktop [-- --arch arm64|x64] [--out <dir>]
- * [--skip-deploy] [--skip-smoke] [--no-dmg]`
+ * Windows can be packed from macOS: optional native packages are prebuilt, and
+ * electron-builder's NSIS target does not need Wine. The boot smoke is skipped
+ * when the target is not this machine, because a Windows Electron binary cannot
+ * run here.
+ *
+ * Usage: `pnpm run package:desktop [-- --platform mac|win] [--arch arm64|x64]
+ * [--out <dir>] [--skip-deploy] [--skip-smoke] [--no-dmg] [--no-installer]`
  */
 
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { get as httpGet } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -23,7 +28,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { RUNTIME_DIRECTORY, RUNTIME_ENTRY_RELATIVE } from '../apps/desktop/src/paths.ts'
 import { ReadinessScanner } from '../apps/desktop/src/readiness.ts'
-import { runtimeArgs } from '../apps/desktop/src/runtime-launch.ts'
+import { localRuntimeLaunch } from '../apps/desktop/src/runtime-launch.ts'
 import { defaultHeapLimitMb } from '../apps/desktop/src/resource-governor.ts'
 import { deployWorkspaceClosure, runCommand } from './deploy-closure.ts'
 import { createDiskImage } from './macos-disk-image.ts'
@@ -36,10 +41,10 @@ const PREFIX = 'package-desktop-app'
 /** Reverse-DNS bundle id. Unsigned, so it only has to be stable and distinct from the browser launcher's. */
 const APP_ID = 'ai.deepseek.dsh.desktop'
 
-/** Bundle and volume name. */
+/** Bundle, volume, and shortcut name. */
 const PRODUCT_NAME = 'DeepSeek Harness'
 
-/** Basename of the disk image, which carries no spaces. */
+/** Basename of installers, which carries no spaces. */
 const PRODUCT_SLUG = 'DeepSeek-Harness'
 
 /** Workspace directory of the Electron shell; also electron-builder's project directory. */
@@ -57,8 +62,11 @@ const RUNTIME_FRONTEND = 'node_modules/@deepseek-ai/dsh-web-frontend/dist/index.
 /** Build outputs the shell needs before anything is packed. */
 const REQUIRED_ARTIFACTS = [`${DESKTOP_DIR}/lib/main.mjs`, `${DESKTOP_DIR}/resources/boot.html`, 'apps/web/dist/index.html']
 
-/** Icon artwork; electron-builder renders the icon set from this square PNG. */
-const ICON = 'assets/macos-app-icon.png'
+/** Icon artwork; electron-builder renders the macOS icon set from this square PNG. */
+const MAC_ICON = 'assets/macos-app-icon.png'
+
+/** Windows icon; the filled canvas is committed because packaging has no rasterizer. */
+const WIN_ICON = 'assets/windows-app-icon.ico'
 
 /** Oldest macOS the bundle declares support for, matching the browser launcher. */
 const MINIMUM_SYSTEM_VERSION = '13.0'
@@ -69,6 +77,10 @@ const SMOKE_TIMEOUT_MS = 180_000
 /** Architectures this packager builds for. */
 const ARCHES = ['arm64', 'x64'] as const
 type Arch = (typeof ARCHES)[number]
+
+/** Operating systems this packager builds for. */
+const PLATFORMS = ['mac', 'win'] as const
+type Platform = (typeof PLATFORMS)[number]
 
 /**
  * Directories inside the closure that only a build needs, removed so the
@@ -89,6 +101,191 @@ const PRUNE_PATHS = [
 function parseArch(value: string): Arch {
   if ((ARCHES as readonly string[]).includes(value)) return value as Arch
   throw new Error(`${PREFIX}: --arch must be one of ${ARCHES.join(', ')}, got ${JSON.stringify(value)}.`)
+}
+
+/**
+ * Narrow a raw `--platform` value.
+ * @param value - the flag value.
+ * @returns the packaging platform.
+ */
+function parsePlatform(value: string): Platform {
+  if (value === 'mac' || value === 'darwin' || value === 'macos') return 'mac'
+  if (value === 'win' || value === 'win32' || value === 'windows') return 'win'
+  throw new Error(`${PREFIX}: --platform must be one of mac, win, got ${JSON.stringify(value)}.`)
+}
+
+/**
+ * The packaging platform for this machine.
+ * @returns mac or win.
+ */
+function hostPlatform(): Platform {
+  if (process.platform === 'darwin') return 'mac'
+  if (process.platform === 'win32') return 'win'
+  throw new Error(`${PREFIX}: host ${process.platform} cannot package the desktop application.`)
+}
+
+/**
+ * Default CPU for a target. Windows defaults to x64 even on Apple silicon,
+ * which is the machine almost every Windows install is.
+ * @param platform - the packaging platform.
+ * @returns the architecture.
+ */
+function defaultArch(platform: Platform): Arch {
+  if (platform === 'win') return 'x64'
+  return process.arch === 'x64' ? 'x64' : 'arm64'
+}
+
+/**
+ * Optional native packages the target OS loads at runtime, taken from the
+ * manifests already in the closure so the versions match what deploy resolved.
+ * @param staging - the deployed closure.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ * @returns `name@version` specs to fetch.
+ */
+async function targetNativeSpecs(staging: string, platform: Platform, arch: Arch): Promise<string[]> {
+  const needle = `${platform === 'mac' ? 'darwin' : 'win32'}-${arch}`
+  const specs: string[] = []
+  for (const relative of ['node_modules/koffi/package.json', 'node_modules/sharp/package.json', 'node_modules/node-addon-require-builtin/package.json']) {
+    const manifestPath = join(staging, relative)
+    if (!existsSync(manifestPath)) continue
+    const manifest = await readJson(manifestPath)
+    const optionals = manifest.optionalDependencies
+    if (optionals === undefined || typeof optionals !== 'object' || optionals === null) continue
+    for (const [name, version] of Object.entries(optionals)) {
+      if (typeof version === 'string' && name.includes(needle)) specs.push(`${name}@${version}`)
+    }
+  }
+  return specs
+}
+
+/**
+ * Destination directory for one npm package name under the closure.
+ * @param staging - the deployed closure.
+ * @param name - bare package name, including scope.
+ * @returns the directory `node_modules` will use for it.
+ */
+function nativePackageDir(staging: string, name: string): string {
+  return join(staging, 'node_modules', ...name.split('/'))
+}
+
+/**
+ * Fetch the target OS's optional native packages into a closure that was
+ * deployed on this machine. `pnpm deploy` installs the host's optionals even
+ * when `supportedArchitectures` is set, so a Windows closure built on macOS
+ * would otherwise ship darwin `koffi` and `sharp`.
+ * @param staging - the deployed closure.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ */
+async function installTargetNatives(staging: string, platform: Platform, arch: Arch): Promise<void> {
+  const os = platform === 'mac' ? 'darwin' : 'win32'
+  if (process.platform === os && process.arch === arch) return
+  const specs = await targetNativeSpecs(staging, platform, arch)
+  if (specs.length === 0) {
+    throw new Error(`${PREFIX}: no optional native packages matching ${os}-${arch} in the deployed closure.`)
+  }
+  const tmp = await mkdtemp(join(tmpdir(), 'dsh-desktop-natives-'))
+  try {
+    for (const spec of specs) {
+      const name = spec.slice(0, spec.lastIndexOf('@'))
+      const dest = nativePackageDir(staging, name)
+      await runCommand({
+        label: `pack ${spec}`,
+        command: 'npm',
+        args: ['pack', spec, '--pack-destination', tmp],
+        cwd: tmp,
+        prefix: PREFIX,
+        dryRun: false,
+      })
+      const tarballs = (await readdir(tmp)).filter(entry => entry.endsWith('.tgz'))
+      if (tarballs.length !== 1 || tarballs[0] === undefined) {
+        throw new Error(`${PREFIX}: npm pack ${spec} produced ${String(tarballs.length)} tarball(s).`)
+      }
+      await mkdir(dest, { recursive: true })
+      const tar = spawnSync('tar', ['-xzf', join(tmp, tarballs[0]), '-C', dest, '--strip-components', '1'], { encoding: 'utf8' })
+      if (tar.status !== 0) {
+        throw new Error(`${PREFIX}: extracting ${tarballs[0]} failed\n${tar.stdout}${tar.stderr}`)
+      }
+      await rm(join(tmp, tarballs[0]), { force: true })
+      console.log(`${PREFIX}: installed ${spec}`)
+    }
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Drop optional native packages that belong to another OS or CPU.
+ * @param staging - the deployed closure.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ */
+async function pruneForeignNatives(staging: string, platform: Platform, arch: Arch): Promise<void> {
+  const keep = `${platform === 'mac' ? 'darwin' : 'win32'}-${arch}`
+  const parents = [
+    join(staging, 'node_modules/@koromix'),
+    join(staging, 'node_modules/@img'),
+    join(staging, 'node_modules'),
+  ]
+  for (const parent of parents) {
+    if (!existsSync(parent)) continue
+    for (const entry of await readdir(parent)) {
+      const isNative = entry.startsWith('koffi-')
+        || entry.startsWith('sharp-')
+        || entry.startsWith('sharp-libvips-')
+        || entry.startsWith('node-addon-require-builtin-')
+      if (!isNative) continue
+      if (entry.includes(keep)) continue
+      await rm(join(parent, entry), { recursive: true, force: true })
+    }
+  }
+}
+
+/**
+ * Whether this machine can boot the target Electron / closure pair.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ * @returns true only when both match the host.
+ */
+function canSmoke(platform: Platform, arch: Arch): boolean {
+  const host = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : undefined
+  return host === platform && (process.arch === 'x64' || process.arch === 'arm64') && process.arch === arch
+}
+
+/**
+ * `node-pty` prebuild directory name for a target.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ * @returns the directory under `prebuilds/`.
+ */
+function ptyPrebuild(platform: Platform, arch: Arch): string {
+  return `${platform === 'mac' ? 'darwin' : 'win32'}-${arch}`
+}
+
+/**
+ * Native trees the shipped closure must contain. Missing ones mean the
+ * Windows (or foreign-arch) optional packages never installed.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ * @returns paths relative to the closure root.
+ */
+function nativeMarkers(platform: Platform, arch: Arch): string[] {
+  const os = platform === 'mac' ? 'darwin' : 'win32'
+  return [
+    `node_modules/node-pty/prebuilds/${os}-${arch}`,
+    `node_modules/@koromix/koffi-${os}-${arch}`,
+    `node_modules/@img/sharp-${os}-${arch}`,
+  ]
+}
+
+/**
+ * electron-builder's `--x64` / `--arm64` flag.
+ * @param arch - the architecture.
+ * @returns the flag.
+ */
+function archFlag(arch: Arch): string {
+  return arch === 'x64' ? '--x64' : '--arm64'
 }
 
 /**
@@ -122,14 +319,15 @@ async function treeSize(directory: string): Promise<number> {
  * Remove the build-only material and every foreign-platform native prebuild
  * from the deployed closure.
  * @param staging - the deployed closure.
+ * @param platform - the packaging platform.
  * @param arch - the architecture being packaged.
  */
-async function pruneClosure(staging: string, arch: Arch): Promise<void> {
+async function pruneClosure(staging: string, platform: Platform, arch: Arch): Promise<void> {
   const before = await treeSize(staging)
   for (const relative of PRUNE_PATHS) await rm(join(staging, relative), { recursive: true, force: true })
   const prebuilds = join(staging, 'node_modules/node-pty/prebuilds')
   if (existsSync(prebuilds)) {
-    const keep = `darwin-${arch}`
+    const keep = ptyPrebuild(platform, arch)
     for (const entry of await readdir(prebuilds)) {
       if (entry !== keep) await rm(join(prebuilds, entry), { recursive: true, force: true })
     }
@@ -164,10 +362,13 @@ async function smokeClosure(staging: string, electronBinary: string): Promise<vo
   const entry = join(staging, RUNTIME_ENTRY_RELATIVE)
   const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-smoke-'))
   console.log(`${PREFIX}: smoke: booting the closure under ${electronBinary}`)
-  const child = spawn(electronBinary, runtimeArgs(entry, defaultHeapLimitMb()), {
+  const launch = localRuntimeLaunch({ entry, nodePath: electronBinary, maxOldSpaceMb: defaultHeapLimitMb() })
+  const child = spawn(launch.command, [...launch.args], {
     cwd: home,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DSH_HOME: home },
+    env: { ...process.env, ...launch.env, DSH_HOME: home },
+    // The local launch ignores stdin; naming it here keeps the pipes typed.
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   })
   let output = ''
   const exited = new Promise<void>((resolveExit) => { child.once('exit', () => { resolveExit() }) })
@@ -248,19 +449,37 @@ async function probeLoopback(url: string): Promise<{ status: number; body: strin
 }
 
 /**
- * Locate the `.app` electron-builder produced.
+ * Locate the unpacked application electron-builder produced.
  * @param outputDir - electron-builder's output directory.
- * @returns the bundle path.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ * @returns the `.app` bundle or the `win-unpacked` directory.
  */
-async function findApp(outputDir: string): Promise<string> {
-  for (const entry of await readdir(outputDir, { withFileTypes: true, recursive: true })) {
-    if (entry.isDirectory() && entry.name.endsWith('.app')) return join(entry.parentPath, entry.name)
+async function findPackedApp(outputDir: string, platform: Platform, arch: Arch): Promise<string> {
+  if (platform === 'mac') {
+    for (const entry of await readdir(outputDir, { withFileTypes: true, recursive: true })) {
+      if (entry.isDirectory() && entry.name.endsWith('.app')) return join(entry.parentPath, entry.name)
+    }
+    throw new Error(`${PREFIX}: no .app bundle under ${outputDir}.`)
   }
-  throw new Error(`${PREFIX}: no .app bundle under ${outputDir}.`)
+  const unpacked = arch === 'x64' ? 'win-unpacked' : `win-${arch}-unpacked`
+  const candidate = join(outputDir, unpacked)
+  if (existsSync(candidate)) return candidate
+  throw new Error(`${PREFIX}: no ${unpacked} directory under ${outputDir}.`)
 }
 
 /**
- * Apply an ad-hoc signature to the packed bundle.
+ * Electron `resources` directory inside a packed application.
+ * @param appPath - the `.app` bundle or the Windows unpacked directory.
+ * @param platform - the packaging platform.
+ * @returns the resources directory.
+ */
+function resourcesDirectory(appPath: string, platform: Platform): string {
+  return platform === 'mac' ? join(appPath, 'Contents', 'Resources') : join(appPath, 'resources')
+}
+
+/**
+ * Apply an ad-hoc signature to the packed macOS bundle.
  *
  * Packaging rewrites the Electron binary's identity and layout, which
  * invalidates the signature it shipped with. On Apple silicon an invalid
@@ -280,20 +499,104 @@ function signAdHoc(appPath: string): void {
   }
 }
 
+/**
+ * electron-builder configuration for one target.
+ * @param electronVersion - the Electron version installed in `apps/desktop`.
+ * @param appOutput - electron-builder's output directory.
+ * @param platform - the packaging platform.
+ * @param arch - the architecture.
+ * @returns the configuration object.
+ */
+function builderConfigObject(
+  electronVersion: string,
+  appOutput: string,
+  platform: Platform,
+  arch: Arch,
+): Record<string, unknown> {
+  const shared = {
+    appId: APP_ID,
+    productName: PRODUCT_NAME,
+    electronVersion,
+    // The harness is ES modules with dynamic imports and native addons, and an
+    // archive serves neither: Electron's loader cannot import ES modules from
+    // inside one, and a native addon has to exist as a file to be loaded.
+    asar: false,
+    npmRebuild: false,
+    buildDependenciesFromSource: false,
+    forceCodeSigning: false,
+    directories: { output: appOutput },
+    files: ['lib/*.mjs', 'resources/**', 'package.json'],
+  }
+  if (platform === 'mac') {
+    return {
+      ...shared,
+      mac: {
+        category: 'public.app-category.developer-tools',
+        target: [{ target: 'dir', arch: [arch] }],
+        icon: join(root, MAC_ICON),
+        minimumSystemVersion: MINIMUM_SYSTEM_VERSION,
+        // Signing is this script's own step; electron-builder must not attempt
+        // to discover a Developer ID it will not find.
+        identity: null,
+      },
+    }
+  }
+  return {
+    ...shared,
+    win: {
+      target: [{ target: 'dir', arch: [arch] }],
+      icon: join(root, WIN_ICON),
+    },
+    nsis: {
+      oneClick: false,
+      perMachine: false,
+      allowToChangeInstallationDirectory: true,
+      createDesktopShortcut: true,
+      createStartMenuShortcut: true,
+      shortcutName: PRODUCT_NAME,
+      artifactName: `${PRODUCT_SLUG}-\${version}-\${arch}-setup.\${ext}`,
+    },
+  }
+}
+
+/** Environment that stops electron-builder looking for a code-signing identity. */
+const BUILDER_ENV = { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+
+/**
+ * Find the NSIS setup electron-builder wrote.
+ * @param directory - electron-builder's output directory.
+ * @returns the setup path.
+ */
+async function findSetupExe(directory: string): Promise<string> {
+  for (const entry of await readdir(directory, { withFileTypes: true, recursive: true })) {
+    if (entry.isFile() && entry.name.endsWith('-setup.exe')) return join(entry.parentPath, entry.name)
+  }
+  throw new Error(`${PREFIX}: no NSIS -setup.exe under ${directory}.`)
+}
+
 /** Run the pipeline. */
 async function main(): Promise<void> {
   const { values } = parseArgs({
+    args: process.argv.slice(2).filter(arg => arg !== '--'),
     options: {
+      platform: { type: 'string' },
       arch: { type: 'string' },
       out: { type: 'string' },
       'skip-deploy': { type: 'boolean', default: false },
       'skip-smoke': { type: 'boolean', default: false },
       dmg: { type: 'boolean', default: true },
+      installer: { type: 'boolean', default: true },
     },
     allowPositionals: false,
   })
-  if (process.platform !== 'darwin') throw new Error(`${PREFIX}: builds on macOS only, ran on ${process.platform}.`)
-  const arch = values.arch === undefined ? (process.arch === 'x64' ? 'x64' : 'arm64') : parseArch(values.arch)
+  const platform = values.platform === undefined ? hostPlatform() : parsePlatform(values.platform)
+  const arch = values.arch === undefined ? defaultArch(platform) : parseArch(values.arch)
+  if (platform === 'mac' && process.platform !== 'darwin') {
+    throw new Error(`${PREFIX}: macOS builds on macOS only, ran on ${process.platform}.`)
+  }
+  if (platform === 'win' && process.platform !== 'darwin' && process.platform !== 'win32') {
+    throw new Error(`${PREFIX}: Windows builds on macOS or Windows, ran on ${process.platform}.`)
+  }
 
   for (const artifact of REQUIRED_ARTIFACTS) {
     if (!existsSync(join(root, artifact))) throw new Error(`${PREFIX}: missing ${artifact} — run 'pnpm run build' first.`)
@@ -332,65 +635,74 @@ async function main(): Promise<void> {
       prefix: PREFIX,
       dryRun: false,
     })
-    await pruneClosure(staging, arch)
+    await pruneClosure(staging, platform, arch)
   }
+  await installTargetNatives(staging, platform, arch)
+  await pruneForeignNatives(staging, platform, arch)
   for (const required of [RUNTIME_ENTRY_RELATIVE, RUNTIME_FRONTEND]) {
     if (!existsSync(join(staging, required))) throw new Error(`${PREFIX}: the deployed closure is missing ${required}.`)
   }
+  for (const marker of nativeMarkers(platform, arch)) {
+    if (!existsSync(join(staging, marker))) {
+      throw new Error(`${PREFIX}: the deployed closure is missing ${marker}; pnpm did not install ${platform}/${arch} native packages.`)
+    }
+  }
 
   if (values['skip-smoke']) console.log(`${PREFIX}: skipping the closure boot smoke (--skip-smoke)`)
+  else if (!canSmoke(platform, arch)) {
+    console.log(`${PREFIX}: skipping the closure boot smoke (${platform}-${arch} cannot run on ${process.platform}-${process.arch})`)
+  }
   else await smokeClosure(staging, electronBinary)
 
   const builderConfig = join(outputDir, 'electron-builder.json')
-  await writeFile(builderConfig, `${JSON.stringify({
-    appId: APP_ID,
-    productName: PRODUCT_NAME,
-    electronVersion,
-    // The harness is ES modules with dynamic imports and native addons, and an
-    // archive serves neither: Electron's loader cannot import ES modules from
-    // inside one, and a native addon has to exist as a file to be loaded.
-    asar: false,
-    npmRebuild: false,
-    buildDependenciesFromSource: false,
-    directories: { output: appOutput },
-    files: ['lib/*.mjs', 'resources/**', 'package.json'],
-    mac: {
-      category: 'public.app-category.developer-tools',
-      target: [{ target: 'dir', arch: [arch] }],
-      icon: join(root, ICON),
-      minimumSystemVersion: MINIMUM_SYSTEM_VERSION,
-      // Signing is this script's own step; electron-builder must not attempt
-      // to discover a Developer ID it will not find.
-      identity: null,
-    },
-  }, undefined, 2)}\n`)
+  await writeFile(builderConfig, `${JSON.stringify(builderConfigObject(String(electronVersion), appOutput, platform, arch), undefined, 2)}\n`)
 
+  const builder = join(root, DESKTOP_DIR, 'node_modules/.bin/electron-builder')
   await runCommand({
     label: 'electron-builder',
-    command: join(root, DESKTOP_DIR, 'node_modules/.bin/electron-builder'),
+    command: builder,
     // Never publish: the build runs with CI set, which electron-builder
     // otherwise reads as a request to upload the artifact.
-    args: ['--mac', '--dir', '--publish', 'never', '--config', builderConfig],
+    args: [platform === 'mac' ? '--mac' : '--win', '--dir', archFlag(arch), '--publish', 'never', '--config', builderConfig],
     cwd: join(root, DESKTOP_DIR),
     prefix: PREFIX,
     dryRun: false,
+    extraEnv: BUILDER_ENV,
   })
 
-  const appPath = await findApp(appOutput)
+  const appPath = await findPackedApp(appOutput, platform, arch)
   // The closure is staged after packing, not through electron-builder's
   // resource copying, which applies its own filters to the tree it copies and
-  // dropped the closure's `node_modules` on the way in. Signing follows, so
-  // the staged bytes are covered by the signature.
-  const staged = join(appPath, 'Contents', 'Resources', RUNTIME_DIRECTORY)
+  // dropped the closure's `node_modules` on the way in. Signing follows on
+  // macOS, so the staged bytes are covered by the signature.
+  const staged = join(resourcesDirectory(appPath, platform), RUNTIME_DIRECTORY)
   await rm(staged, { recursive: true, force: true })
   await cp(staging, staged, { recursive: true, preserveTimestamps: true })
   if (!existsSync(join(staged, RUNTIME_ENTRY_RELATIVE))) throw new Error(`${PREFIX}: staging the closure did not produce ${RUNTIME_ENTRY_RELATIVE}.`)
-  signAdHoc(appPath)
+  if (platform === 'mac') signAdHoc(appPath)
   console.log(`${PREFIX}: app: ${appPath} (${formatMib(await treeSize(appPath))})`)
-  if (!values.dmg) return
-  const dmgPath = join(outputDir, `${PRODUCT_SLUG}-${String(version)}-${arch}.dmg`)
-  await createDiskImage({ appPath, volumeName: PRODUCT_NAME, dmgPath })
-  console.log(`${PREFIX}: dmg: ${dmgPath} (${formatMib((await stat(dmgPath)).size)})`)
+
+  if (platform === 'mac') {
+    if (!values.dmg) return
+    const dmgPath = join(outputDir, `${PRODUCT_SLUG}-${String(version)}-${arch}.dmg`)
+    await createDiskImage({ appPath, volumeName: PRODUCT_NAME, dmgPath })
+    console.log(`${PREFIX}: dmg: ${dmgPath} (${formatMib((await stat(dmgPath)).size)})`)
+    return
+  }
+  if (!values.installer) return
+  await runCommand({
+    label: 'nsis',
+    command: builder,
+    args: ['--prepackaged', appPath, '--win', 'nsis', archFlag(arch), '--publish', 'never', '--config', builderConfig],
+    cwd: join(root, DESKTOP_DIR),
+    prefix: PREFIX,
+    dryRun: false,
+    extraEnv: BUILDER_ENV,
+  })
+  const produced = await findSetupExe(appOutput)
+  const setupPath = join(outputDir, `${PRODUCT_SLUG}-${String(version)}-${arch}-setup.exe`)
+  if (produced !== setupPath) await rename(produced, setupPath)
+  console.log(`${PREFIX}: setup: ${setupPath} (${formatMib((await stat(setupPath)).size)})`)
 }
 
 await main()

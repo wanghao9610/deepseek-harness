@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_code_syntax", "name": "run_code", "argumentsDelta": "{\"code\": \"// Read the first line of the command output.\\nconst out = await tools.bash({ command: \\\"echo CODE_ONE\\\", { description: \\\"Print CODE_ONE\\\" });\\nreturn out;\", \"description\": \"Return the first line of the echo output\"}" },
+      { "type": "block-end", "index": 0, "block": {"type": "tool-call", "id": "call_code_syntax", "name": "run_code", "arguments": "{\"code\": \"// Read the first line of the command output.\\nconst out = await tools.bash({ command: \\\"echo CODE_ONE\\\", { description: \\\"Print CODE_ONE\\\" });\\nreturn out;\", \"description\": \"Return the first line of the echo output\"}"} },
+      { "type": "usage", "usage": {"inputTokens": 10, "outputTokens": 5} },
+      { "type": "finish", "reason": {"kind": "tool-calls"} }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "call_code_failure", "name": "run_code", "argumentsDelta": "{\"code\": \"// Read the first line of the command output.\\nconst [first] = await tools.bash({ command: \\\"echo CODE_ONE\\\", description: \\\"Print CODE_ONE\\\" });\\nreturn first;\", \"description\": \"Return the first line of the echo output\"}" },
+      { "type": "block-end", "index": 0, "block": {"type": "tool-call", "id": "call_code_failure", "name": "run_code", "arguments": "{\"code\": \"// Read the first line of the command output.\\nconst [first] = await tools.bash({ command: \\\"echo CODE_ONE\\\", description: \\\"Print CODE_ONE\\\" });\\nreturn first;\", \"description\": \"Return the first line of the echo output\"}"} },
+      { "type": "usage", "usage": {"inputTokens": 10, "outputTokens": 5} },
+      { "type": "finish", "reason": {"kind": "tool-calls"} }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "The program failed on its second line: bash answers an object, not an array." },
+      { "type": "block-end", "index": 0, "block": {"type": "text", "text": "The program failed on its second line: bash answers an object, not an array."} },
+      { "type": "usage", "usage": {"inputTokens": 10, "outputTokens": 5} },
+      { "type": "finish", "reason": {"kind": "stop"} }
+    ]
+  }
+]

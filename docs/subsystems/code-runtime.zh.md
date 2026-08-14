@@ -141,7 +141,10 @@ type CodeBindingFunction = (args: unknown) => Promise<CodeJsonValue>
  * (per docs/defensive-patterns.md): a budget expiry is not an exception, an
  * abort is not a timeout, and a substrate death is neither.
  *
- * - `'exception'` — the program threw or failed to parse/transform.
+ * - `'exception'` — the program threw or failed to parse/transform. The message
+ *   states the failure in the PROGRAM's own line and column coordinates and
+ *   names no implementation file or host path, so an implementation translates
+ *   its own stack or traceback before reporting one.
  * - `'timeout'` — an implementation-owned budget expired; the message says which.
  * - `'abort'` — {@link CodeRunRequest.signal} fired.
  * - `'worker-exit'` — the execution substrate died without settling (e.g. OOM).

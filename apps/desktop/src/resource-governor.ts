@@ -5,7 +5,8 @@
  * profile mounts, so it is the process whose footprint matters. The shell
  * samples it and applies one rule set, whose first clause is that agent work is
  * never interrupted: a decision to reclaim memory only ever applies to an idle
- * runtime.
+ * runtime. Resident size comes from `ps` on Unix and from PowerShell
+ * `WorkingSet64` on Windows.
  * @module @deepseek-ai/dsh-desktop/resource-governor
  */
 
@@ -104,6 +105,51 @@ export function decideResourceAction(sample: ResourceSample, config: ResourcePol
   return { action: 'none' }
 }
 
+/** How one platform reports a process's resident set. */
+export interface ProcessRssCommand {
+  /** Executable that prints the size. */
+  file: string
+  /** Its arguments; `pid` is already interpolated. */
+  args: string[]
+  /**
+   * Convert that command's stdout into bytes.
+   * @param stdout - the command's standard output.
+   * @returns resident set size in bytes, or `undefined` when the output is not a number.
+   */
+  parse: (stdout: string) => number | undefined
+}
+
+/**
+ * The command that reads one process's resident set on this platform.
+ *
+ * Unix `ps -o rss=` prints kibibytes. Windows PowerShell `WorkingSet64` is
+ * already bytes. The runtime is not an Electron child process, so
+ * `app.getAppMetrics()` does not cover it.
+ * @param pid - the process to measure.
+ * @param platform - the host OS; defaults to this process.
+ * @returns the command and the parser for its stdout.
+ */
+export function processRssCommand(pid: number, platform: NodeJS.Platform = process.platform): ProcessRssCommand {
+  if (platform === 'win32') {
+    return {
+      file: 'powershell.exe',
+      args: ['-NoProfile', '-Command', `(Get-Process -Id ${String(pid)}).WorkingSet64`],
+      parse: (stdout) => {
+        const bytes = Number.parseInt(stdout.trim(), 10)
+        return Number.isFinite(bytes) ? bytes : undefined
+      },
+    }
+  }
+  return {
+    file: '/bin/ps',
+    args: ['-o', 'rss=', '-p', String(pid)],
+    parse: (stdout) => {
+      const kibibytes = Number.parseInt(stdout.trim(), 10)
+      return Number.isFinite(kibibytes) ? kibibytes * 1024 : undefined
+    },
+  }
+}
+
 /**
  * Read one process's resident set size.
  *
@@ -113,14 +159,14 @@ export function decideResourceAction(sample: ResourceSample, config: ResourcePol
  * @returns its resident set size in bytes, or `undefined` when the process is gone or unreadable.
  */
 export async function readProcessRss(pid: number): Promise<number | undefined> {
+  const command = processRssCommand(pid)
   return new Promise((resolve) => {
-    execFile('/bin/ps', ['-o', 'rss=', '-p', String(pid)], (error, stdout) => {
+    execFile(command.file, command.args, (error, stdout) => {
       if (error !== null) {
         resolve(undefined)
         return
       }
-      const kibibytes = Number.parseInt(stdout.trim(), 10)
-      resolve(Number.isFinite(kibibytes) ? kibibytes * 1024 : undefined)
+      resolve(command.parse(stdout))
     })
   })
 }

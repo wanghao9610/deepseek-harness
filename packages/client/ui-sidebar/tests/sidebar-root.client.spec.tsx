@@ -85,6 +85,50 @@ describe('SidebarRoot shell', () => {
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
+  // The chord's modifier is the platform's own; jsdom reports no Apple
+  // platform, so Control is the spelling here (useShortcut owns the choice).
+  it('starts a session on the New Session chord, in both column states', () => {
+    const expanded = mountShell()
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    expect(expanded.startSession).toHaveBeenCalledOnce()
+    cleanup()
+    const rail = mountShell({ collapsed: true })
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
+    expect(rail.startSession).toHaveBeenCalledOnce()
+  })
+
+  it('toggles the column on the sidebar chord, from either state', () => {
+    const expanded = mountShell()
+    fireEvent.keyDown(document, { key: 'b', ctrlKey: true })
+    expect(expanded.toggleSidebar).toHaveBeenCalledOnce()
+    cleanup()
+    // The rail has no second key to come back with, so the same chord returns.
+    const rail = mountShell({ collapsed: true })
+    fireEvent.keyDown(document, { key: 'b', ctrlKey: true })
+    expect(rail.toggleSidebar).toHaveBeenCalledOnce()
+  })
+
+  it('announces the chord on the collapse toggle, under either label', () => {
+    mountShell()
+    fireEvent.focus(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('Collapse sidebar Ctrl+B')
+    cleanup()
+    mountShell({ collapsed: true })
+    fireEvent.focus(screen.getByRole('button', { name: 'Open sidebar' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar Ctrl+B')
+  })
+
+  it('announces the chord on the New Session tooltip in both column states', () => {
+    mountShell()
+    // Expanded, the wordmark comes first; the capsule is the labelled control.
+    fireEvent.focus(screen.getAllByRole('button', { name: 'New session' })[1]!)
+    expect(screen.getByRole('tooltip').textContent).toBe('New session Ctrl+K')
+    cleanup()
+    mountShell({ collapsed: true })
+    fireEvent.focus(screen.getByRole('button', { name: 'New session' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('New session Ctrl+K')
+  })
+
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {
     const b = mountShell()
     expect(b.regionOwner().wide).toBe(true)

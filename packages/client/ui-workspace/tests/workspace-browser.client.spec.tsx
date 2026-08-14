@@ -714,6 +714,70 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByTestId('directory-flow')).toBeTruthy()
   })
 
+  // The chord's modifier is the platform's own; jsdom reports no Apple
+  // platform, so Control is the spelling here (useShortcut owns the choice).
+  it('raises the directory flow on the Add Workspace chord, in both column states', () => {
+    mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    fireEvent.keyDown(document, { key: 'o', ctrlKey: true })
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    cleanup()
+    mount({ wide: false, useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    fireEvent.keyDown(document, { key: 'o', ctrlKey: true })
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+  })
+
+  it('leaves the Add Workspace chord inert when no directory-flow occupant is composed', () => {
+    const b = mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
+      useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => false, subscribe: () => () => {} }),
+    })
+    fireEvent.keyDown(document, { key: 'o', ctrlKey: true })
+    // The chord goes with the button it belongs to: nothing to add with,
+    // nothing to raise.
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    // And the press left no armed state behind: an occupant mounting later
+    // must not raise a flow nobody asked for by then.
+    rerender(b, {
+      useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
+    })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    expect(screen.getByRole('button', { name: '添加工作区' })).toBeTruthy()
+  })
+
+  it('reaches the search box on its chord from either column state', () => {
+    vi.useFakeTimers()
+    try {
+      const wide = mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+      fireEvent.keyDown(document, { key: 'F', ctrlKey: true, shiftKey: true })
+      expect(document.activeElement).toBe(wide.view.container.querySelector('input[type="text"]'))
+      expect(wide.props.expandSidebar).not.toHaveBeenCalled()
+      cleanup()
+
+      // The rail has no box of its own: the chord asks the shell for the wide
+      // column and lands in the input once the slide settles.
+      const rail = mount({ wide: false, useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+      fireEvent.keyDown(document, { key: 'F', ctrlKey: true, shiftKey: true })
+      expect(rail.props.expandSidebar).toHaveBeenCalledOnce()
+      rerender(rail, { wide: true })
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(document.activeElement).toBe(rail.view.container.querySelector('input[type="text"]'))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('announces the search chord on its tooltip', () => {
+    mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    fireEvent.focus(screen.getByRole('button', { name: '搜索会话' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('搜索 Ctrl+Shift+F')
+  })
+
+  it('announces the chord on the add-workspace tooltip', () => {
+    mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    fireEvent.focus(screen.getByRole('button', { name: '添加工作区' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('添加工作区 Ctrl+O')
+  })
+
   it('hides the add button when no directory-flow occupant is composed', () => {
     mount({
       useWorkspaces: hook(workspaceState([workspace('alpha', [])])),

@@ -1,0 +1,128 @@
+terminal 92x32 buffer=normal length=49 base=17 viewport=17
+lifecycle started=1 stopped=0 progress=inactive
+title "Inspect session diagnostics — DSH snapshot"
+cursor hidden column=7 viewportRow=31 bufferRow=48
+buffer
+0| "      ▄▄▄▄▄▄▄██▀    █▄      ▄"
+  style 1-28 fg=bright-magenta
+1| "   ▄███████████▄▄   ███▄▄████"
+  style 1-28 fg=bright-magenta
+2| "  ████████████████▄ ▀██████▀"
+  style 1-27 fg=bright-magenta
+3| " ██▀▀▀▀▀████████████▄▄██▀"
+  style 1-24 fg=bright-magenta
+4| " ██       ▀█████▄ ▀█████"
+  style 1-23 fg=bright-magenta
+5| " ██▄        ▀████▄ ▄████"
+  style 1-23 fg=bright-magenta
+6| "  ██▄         ████████▀"
+  style 1-22 fg=bright-magenta
+7| "   ██▄    ▄▄   ▀█████▀"
+  style 1-21 fg=bright-magenta
+8| "    ▀███▄▄▄███▄  ████▄▄"
+  style 1-22 fg=bright-magenta
+9| "      ▀▀▀███████▀▀"
+  style 1-17 fg=bright-magenta
+10| " "
+11| " DEEPSEEK HARNESS"
+  style 1-8 fg=bright-magenta bold
+  style 10-16 bold
+12| " Inspect session diagnostics"
+  style 1-27 dim
+13| " main-session"
+  style 1-12 dim
+14| <blank>
+15| "Assistant                                                                                   "
+  style 0-8 fg=bright-magenta bold underline
+16| "Session inspected.                                                                          "
+17| "Model wait 0.0s                                                                             "
+  style 0-14 dim
+18| <blank>
+19| "You                                                                                         "
+  style 0-2 fg=bright-magenta bold underline
+20| "inspect this session                                                                        "
+21| <blank>
+22| "╭─ Session status ────────────────────────────────────────────────────────────────────────╮"
+  style 0-2 dim
+  style 3-16 fg=bright-magenta bold
+  style 17-90 dim
+23| "│  Session:    main-session                                                               │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+24| "│  Title:      Inspect session diagnostics                                                │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+25| "│  Directory:  /workspace/project                                                         │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+26| "│  Model:      deepseek-official/deepseek-v4-pro (effort default; reasoning blocks shown) │"
+  style 0-0 dim
+  style 3-12 dim
+  style 49-88 dim
+  style 90-90 dim
+27| "│                                                                                         │"
+  style 0-0 dim
+  style 90-90 dim
+28| "│  Agent:      idle · 8 events · 1 turn · 1 step · 1 tool call                            │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+29| "│                                                                                         │"
+  style 0-0 dim
+  style 90-90 dim
+30| "│  Tokens:     1,250 input + 340 output                                                   │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+31| "│  KV cache:   [███████████░░░░░] 67% hit (3,000 read + 250 write)                        │"
+  style 0-0 dim
+  style 3-12 dim
+  style 15-15 dim
+  style 16-26 fg=bright-magenta
+  style 27-32 dim
+  style 90-90 dim
+32| "│  Context:    [█████░░░░░░░░░░░] 33% used (42,000 / 128,000)                             │"
+  style 0-0 dim
+  style 3-12 dim
+  style 15-15 dim
+  style 16-20 fg=bright-magenta
+  style 21-32 dim
+  style 90-90 dim
+33| "│                                                                                         │"
+  style 0-0 dim
+  style 90-90 dim
+34| "│  Created:    2026-07-22 09:10:11 UTC                                                    │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+35| "│  Active:     2026-07-22 09:10:11 UTC                                                    │"
+  style 0-0 dim
+  style 3-12 dim
+  style 90-90 dim
+36| "╰─────────────────────────────────────────────────────────────────────────────────────────╯"
+  style 0-90 dim
+37| <blank>
+38| "System prompt                                                                               "
+  style 0-12 fg=bright-magenta bold
+39| "You are an AI agent powered by DeepSeek Harness.                                            "
+40| "                                                                                            "
+41| "Paths prefixed with @ are files explicitly referenced by the user. Use the read tool when   "
+42| "their contents are needed; do not claim to have inspected a file before reading it.         "
+43| <blank>
+44| "Registered tools                                                                            "
+  style 0-15 fg=bright-magenta bold
+45| "read, write                                                                                 "
+46| <blank>
+47| "/workspace/project (tui-staging)  deepseek-v4-pro  ↑1.3k ↓340  cache 67%  33% context"
+  style 0-17 fg=bright-magenta bold
+  style 18-31 dim
+  style 34-48 dim
+  style 51-71 dim
+  style 74-84 dim
+48| " dsh >                                                                                      "
+  style 1-3 fg=bright-magenta bold
+  style 5-6 dim
+  style 7-7 inverse

@@ -573,6 +573,26 @@ describe('startInitialSelection', () => {
     stopEmpty()
   })
 
+  it('a window opened as a new one mints its own session instead of reusing the workspace blank', async () => {
+    const b = bench()
+    b.api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [workspace('recent', [sid('s-blank')], '2026-01-02T00:00:00.000Z')] as never[],
+    }))
+    // The blank another window is already showing is exactly the reuse hit
+    // that would put both windows on one conversation.
+    b.api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: sid('s-blank'), updatedAt: 2, running: false, blank: true, cwd: '/w/recent' }] as never[],
+    }))
+    b.api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-own') }))
+    const stop = b.workspaces.startInitialSelection({ freshSession: true })
+    await b.workspaces.refresh()
+    await b.sessions.refresh()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(b.api.callsOf('session.create')).toEqual([{ workspaceId: 'recent' }])
+    expect(b.sessions.list.getSnapshot().current).toBe('s-own')
+    stop()
+  })
+
   it('a failed connect returns to waiting and retries on the next list change', async () => {
     const b = bench()
     b.api.onWorkspaceList = () => Promise.resolve(ok({

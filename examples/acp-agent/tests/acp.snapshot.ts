@@ -540,6 +540,18 @@ const SCENARIOS: Scenario[] = [
   // tools:sdk section rides in the prompt, and the program's tool calls land as
   // tool/code-dispatch events. Each overlay composes and pins its own header class.
   { name: 'code-mode-turn', hasModelTurn: true, recorded: true, pinsHeader: true, headerClass: 'code', configPath: CODE_MODE_CONFIG },
+  // Two failing programs in one turn sequence — a malformed object literal the
+  // stripper rejects, then one that array-destructures a tool's object answer.
+  // Both diagnostics the model reads back must locate the failure on the
+  // program's own second line and name no harness file.
+  {
+    name: 'code-mode-failure',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    headerClass: 'code',
+    configPath: CODE_MODE_CONFIG,
+  },
   // A nested fs dispatch inside run_code discovers workspace instructions. The
   // projection enters the inbox after the outer result and becomes model-visible
   // on the following step, retaining workspace provenance end to end.

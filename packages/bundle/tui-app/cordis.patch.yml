@@ -1,0 +1,140 @@
+# The dsh-tui-app bundle patch: the interactive terminal surface over the
+# dsh-base layer. Applied after dsh-base's insert; rows here override base rows
+# by id, with the profile's own cordis.patch.yml and any --patch overlays still
+# to come.
+#
+# A patch replaces the targeted row's whole `config`, so each row below
+# restates every key it owns.
+#
+# The tui-startup plugin injects `cmdlineArgs` and provides `tuiStartup` as an
+# ordinary Cordis service carrying this invocation's session identity. Rows
+# configured from flags inject that service, so Loader resolves their
+# expressions only after it exists. `dsh --profile tui --help` provides
+# nothing, so no agent starts and no terminal is taken over.
+
+# ── surface-specific values the base deliberately omits ─────────────────────
+
+# Keep the persona to identity and behavior; tool plugins own tool guidance.
+- id: system-prompt
+  config:
+    persona: |
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+      Verify your work by running the code or tests. Keep answers brief and factual.
+
+# `main` is the agent this terminal drives. The identity comes from the app's
+# own startup service rather than a config key, so a later patch layer
+# repointing the model route cannot drop `--resume`.
+- id: agent-loop
+  inject: [tuiStartup]
+  config:
+    agents:
+      - id: main
+        provider: deepseek-official
+        model: deepseek-v4-pro
+        cwd: !!js process.cwd()
+        # Quoted: an unquoted `?`/`:` expression would parse as a YAML mapping.
+        sessionId: !!js "ctx.tuiStartup.resume ? undefined : ctx.tuiStartup.sessionId"
+        resumeSessionId: !!js "ctx.tuiStartup.resume ? ctx.tuiStartup.sessionId : undefined"
+
+# Shipped default: full thinking at max effort on every request. Exact-model
+# resolution materializes request defaults before the request header is logged.
+- id: llm-deepseek
+  config:
+    thinking: enabled
+    reasoningEffort: max
+
+# This single-session app resolves relative paths from the process cwd.
+- id: fs-sandbox
+  config:
+    cwd: !!js process.cwd()
+
+# The shipped terminal presents the native tool registry.
+- id: tools
+  config:
+    mode: !!js process.env.DSH_TOOLS_MODE
+
+# `/resume` reads the persisted corpus, so full-text search is on here. The
+# index is a disposable derived artifact with one writer owner, so the startup
+# service hands out a process-local path instead of a shared file.
+- id: session-query-sqlite
+  inject: [tuiStartup]
+  config:
+    path: !!js ctx.tuiStartup.queryIndexPath
+    openAt: first-search
+
+# ── terminal-only rows ──────────────────────────────────────────────────────
+
+- insert:
+    # Ordinary provider for the parsed terminal flags. Its plugin-level
+    # injection of `cmdlineArgs` is what defers every row above that reads it.
+    - id: tui-startup
+      name: '@deepseek-ai/dsh-tui-app/startup'
+
+    # Bundle glue: the harness-source prompt section, the terminal-surface
+    # prompt section, and the in-place `/resume` process handoff.
+    - id: tui-app
+      name: '@deepseek-ai/dsh-tui-app'
+      inject: [tuiStartup]
+      config:
+        goodbye: !!js ctx.tuiStartup.goodbye
+        queryIndexPath: !!js ctx.tuiStartup.queryIndexPath
+
+    # Code Mode is a core execution capability, not a Web component.
+    - id: code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+
+    # `@session` reference cards resolve foreign session history into a prompt.
+    - id: session-reference
+      name: '@deepseek-ai/dsh-session-reference'
+
+    # The durable checkpoint cache behind `/resume` titles (over the same
+    # storage root the web surface uses): a resume scan reads the zero-I/O
+    # checkpoint row or a tail-only cold read instead of whole logs, and
+    # checkpoints written by either surface serve both.
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+    - id: storage-json
+      name: '@deepseek-ai/dsh-storage-json'
+      config:
+        root: !!js dshHomePath('storages')
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: json
+    - id: session-projection-cache
+      name: '@deepseek-ai/dsh-session-projection-cache'
+      config:
+        writeEveryEvents: 200
+        writeIntervalMs: 5000
+
+    # Terminal-multiplexer context, mounted only where a terminal exists.
+    - id: tmux-context
+      name: '@deepseek-ai/dsh-tmux-context'
+      config:
+        refreshIntervalMs: 900000
+
+    # Wall-clock context: an interactive session spans hours, so the model is
+    # told the current time rather than inferring it from its training data.
+    - id: time-context
+      name: '@deepseek-ai/dsh-time-context'
+
+    # The prompt-value registry the terminal's status rows render from.
+    - id: tui-prompt
+      name: '@deepseek-ai/dsh-tui/prompt'
+
+    # The terminal front door renders exactly the agent the agent-loop row
+    # bound, so it reads the same startup identity rather than restating one.
+    - id: tui
+      name: '@deepseek-ai/dsh-tui'
+      # `tuiGoodbyeMessage` is the glue row's last published input, so injecting
+      # it defers the terminal takeover until every optional host slot exists.
+      inject: [tuiStartup, tuiGoodbyeMessage]
+      config:
+        sessionId: !!js ctx.tuiStartup.sessionId
+        showReasoning: true
+        maxToolOutputLines: 6
+
+    # The model-facing question tool, whose keyboard UI the terminal provides.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'

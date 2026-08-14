@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "op": "initialize"
+    },
+    {
+      "op": "newSession"
+    },
+    {
+      "op": "prompt",
+      "text": "Using ONE run_code program, call the bash tool with exactly `echo CODE_ONE` and return the first line of its output. Then tell me in one sentence what happened."
+    }
+  ]
+}

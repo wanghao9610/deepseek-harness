@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-13-client-keyboard-shortcuts.md
+2026-08-13-client-keyboard-shortcuts.md: ec77abe396085d1cfdbdf846b13068a5eec41f68
+2026-08-13-client-keyboard-shortcuts.zh.md: 15ee11d248683eec432e0a3a95e6fc681fe45c91

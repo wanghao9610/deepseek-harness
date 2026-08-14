@@ -71,6 +71,16 @@ function rafBatch(notify: () => void): () => void {
 }
 
 /**
+ * How far a persisted cell reaches.
+ *
+ * `origin` state is one cell every window on the origin shares. `window` state
+ * is private to the window that wrote it, with the shared cell kept as a
+ * cold-start seed — the reach a cell needs when two windows are looking at the
+ * same application at once and must not move each other.
+ */
+export type PersistScope = 'origin' | 'window'
+
+/**
  * Create a snapshot store.
  *
  * Flush default is 'sync' (controlled inputs need same-tick echo); frame-driven
@@ -80,16 +90,18 @@ function rafBatch(notify: () => void): () => void {
  * frame-level skew, same nature as the object layer's microtask batching.
  *
  * @param init - initial state.
- * @param opts - flush mode and opt-in persistence (localStorage, keyed by name).
+ * @param opts - flush mode and opt-in persistence (keyed by name; `origin` scope by default).
  * @returns the store.
  */
 export function createSnapshotStore<T>(
-  init: T, opts?: { flush?: 'raf' | 'sync'; persist?: { name: string } }): SnapshotStore<T> {
+  init: T,
+  opts?: { flush?: 'raf' | 'sync'; persist?: { name: string; scope?: PersistScope } },
+): SnapshotStore<T> {
   // Immer enters through produce() in update() below (identical semantics to
   // the immer middleware without its setState-signature mutator generics).
   const withSelector = subscribeWithSelector(() => init)
   const api: StoreApi<T> = createStore<T>()(withSelector)
-  if (opts?.persist) attachPersistence(api, opts.persist.name)
+  if (opts?.persist) attachPersistence(api, opts.persist.name, opts.persist.scope ?? 'origin')
 
   let subscribe = (fn: () => void) => api.subscribe(fn)
   if (opts?.flush === 'raf') {
@@ -117,33 +129,69 @@ export function createSnapshotStore<T>(
 }
 
 /**
- * Whole-value JSON persistence to localStorage. Hand-rolled instead of the
+ * Whole-value JSON persistence to web storage. Hand-rolled instead of the
  * zustand persist middleware: its write path spreads state into an object
  * (`partialize({ ...get() })`), exploding primitive state (a persisted string
  * draft becomes {0:'h',1:'e',...}) — not fixable via merge/deserialize options
  * because the corruption happens before serialization. Storage failures
  * (quota, private mode) only disable persistence, never break the store.
+ *
+ * Window scope writes both cells and reads its own first: sessionStorage is
+ * this window's answer, and localStorage holds whichever window wrote last, so
+ * a window that has never written one starts where the browser left off and
+ * diverges from there.
  */
-function attachPersistence<T>(api: StoreApi<T>, name: string): void {
-  // Non-browser runs (node e2e booting the client tree) have no localStorage:
+function attachPersistence<T>(api: StoreApi<T>, name: string, scope: PersistScope): void {
+  // Non-browser runs (node e2e booting the client tree) have no web storage:
   // persistence silently disables — same contract as a storage failure, minus
   // the per-store console noise a ReferenceError would produce.
-  if (typeof localStorage === 'undefined') return
-  try {
-    const raw = localStorage.getItem(name)
-    if (raw !== null) {
+  const shared = typeof localStorage === 'undefined' ? undefined : localStorage
+  const own = scope === 'origin' || typeof sessionStorage === 'undefined' ? undefined : sessionStorage
+  if (shared === undefined && own === undefined) return
+  const raw = readCell(own, name) ?? readCell(shared, name)
+  if (raw !== null) {
+    try {
       api.setState(devFreeze(JSON.parse(raw) as T), true)
+    } catch (error) {
+      console.error(`snapshot store '${name}' rehydration failed:`, error)
     }
-  } catch (error) {
-    console.error(`snapshot store '${name}' rehydration failed:`, error)
   }
   api.subscribe((state) => {
-    try {
-      localStorage.setItem(name, JSON.stringify(state))
-    } catch (error) {
-      console.error(`snapshot store '${name}' persistence failed:`, error)
-    }
+    const json = JSON.stringify(state)
+    writeCell(own, name, json)
+    writeCell(shared, name, json)
   })
+}
+
+/**
+ * Read one persisted cell.
+ * @param storage - the store to read, or `undefined` where this scope has none.
+ * @param name - the cell's key.
+ * @returns the stored JSON, or null when absent or unreadable.
+ */
+function readCell(storage: Storage | undefined, name: string): string | null {
+  if (storage === undefined) return null
+  try {
+    return storage.getItem(name)
+  } catch (error) {
+    console.error(`snapshot store '${name}' rehydration failed:`, error)
+    return null
+  }
+}
+
+/**
+ * Write one persisted cell.
+ * @param storage - the store to write, or `undefined` where this scope has none.
+ * @param name - the cell's key.
+ * @param json - the serialized state.
+ */
+function writeCell(storage: Storage | undefined, name: string, json: string): void {
+  if (storage === undefined) return
+  try {
+    storage.setItem(name, json)
+  } catch (error) {
+    console.error(`snapshot store '${name}' persistence failed:`, error)
+  }
 }
 
 /** Deep-freeze wholesale-set state outside production: set() bypasses immer's freeze. */

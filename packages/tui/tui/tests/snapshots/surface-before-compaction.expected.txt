@@ -1,0 +1,65 @@
+terminal 80x24 buffer=normal length=30 base=6 viewport=6
+lifecycle started=1 stopped=0 progress=inactive
+title "DSH snapshot"
+cursor hidden column=7 viewportRow=23 bufferRow=29
+buffer
+0| "    ▄▄▄▄▄▄   ▄▄"
+  style 1-14 fg=bright-magenta
+1| "  ▄████████▄ ▀████▀"
+  style 1-18 fg=bright-magenta
+2| " █▀▀▀▀███████▄██▀"
+  style 1-16 fg=bright-magenta
+3| " █▄    ▀███ ▀███"
+  style 1-15 fg=bright-magenta
+4| " ▀█▄     ▀█████"
+  style 1-14 fg=bright-magenta
+5| "  ▀█▄▄ █▄▄▀███▄"
+  style 1-14 fg=bright-magenta
+6| "     ▀▀▀▀▀▀"
+  style 1-10 fg=bright-magenta
+7| " "
+8| " DEEPSEEK HARNESS"
+  style 1-8 fg=bright-magenta bold
+  style 10-16 bold
+9| " Snapshot agent ready."
+  style 1-21 dim
+10| " main-session"
+  style 1-12 dim
+11| <blank>
+12| "Assistant                                                                       "
+  style 0-8 fg=bright-magenta bold underline
+13| <blank>
+14| "You                                                                             "
+  style 0-2 fg=bright-magenta bold underline
+15| "Old prompt with a long line that exercises wrapping and stays visible after     "
+16| "compaction.                                                                     "
+17| <blank>
+18| "● Tool / bash / Run the coverage gate"
+  style 0-36 fg=green
+19| "$ pnpm run test:coverage                                                        "
+  style 0-23 dim
+20| "/workspace/project                                                              "
+  style 0-17 dim
+21| "packages/tui/tui 100%                                                           "
+  style 0-20 dim
+22| "… +1 lines (Ctrl+O to expand)                                                   "
+  style 0-28 dim
+23| "1 test skipped                                                                  "
+  style 0-13 dim
+24| "coverage complete                                                               "
+  style 0-16 dim
+25| "[exit 0]                                                                        "
+  style 0-7 dim
+26| "Model wait 0.0s                                                                 "
+  style 0-14 dim
+27| <blank>
+28| "/workspace/project (tui-staging)  deepseek-v4-flash  ↑0 ↓0  0% context"
+  style 0-17 fg=bright-magenta bold
+  style 18-31 dim
+  style 34-50 dim
+  style 53-57 dim
+  style 60-69 dim
+29| " dsh >                                                                          "
+  style 1-3 fg=bright-magenta bold
+  style 5-6 dim
+  style 7-7 inverse

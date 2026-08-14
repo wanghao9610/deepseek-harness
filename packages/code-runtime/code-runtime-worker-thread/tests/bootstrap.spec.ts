@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { LogBuffer, makeBindingErrorClasses, makeConsoleShim, makeNamespaces, captureStreamWrites, prepareCompletion, prepareException, runWorkerMain, wireReplies } from '../src/bootstrap.ts'
+import { LogBuffer, makeBindingErrorClasses, makeConsoleShim, makeNamespaces, captureStreamWrites, normalizeProgramStack, prepareCompletion, prepareException, programHeaderLines, runWorkerMain, wireReplies } from '../src/bootstrap.ts'
 import type { BootstrapPort, PatchableStream, PendingCall } from '../src/bootstrap.ts'
 import type { ReplyMessage, WorkerToHost } from '../src/protocol.ts'
 import { decodeWorkerJson, encodeWorkerJson } from '../src/worker-json.ts'
@@ -182,24 +182,92 @@ describe('prepareCompletion', () => {
   })
 })
 
+/** The worker's own frame, carrying the absolute host path that must never reach a model. */
+const HARNESS_FRAME = '    at async runWorkerMain (/Applications/DeepSeek Harness.app/Contents/Resources/backend/node_modules/@deepseek-ai/dsh-code-runtime-worker-thread/lib/worker.cjs:887:25)'
+
+/** The program's own top-level frame, as V8 renders it for a constructed function. */
+const PROGRAM_TOP_FRAME = '    at eval (eval at runWorkerMain (/Applications/DeepSeek Harness.app/Contents/Resources/backend/node_modules/@deepseek-ai/dsh-code-runtime-worker-thread/lib/worker.cjs:887:31), <anonymous>:5:19)'
+
 describe('prepareException', () => {
   it('passes a fitting diagnostic and rejects one byte over without carrying its text', () => {
-    expect(prepareException('boom', 6, 64)).toEqual({ error: { kind: 'exception', message: 'boom' } })
-    expect(prepareException('boom', 5, 64)).toEqual({
+    expect(prepareException('boom', 3, 6, 64)).toEqual({ error: { kind: 'exception', message: 'boom' } })
+    expect(prepareException('boom', 3, 5, 64)).toEqual({
       error: { kind: 'output-limit', message: 'outer output exceeded 64 bytes' },
     })
   })
 
   it('contains a thrown value whose string conversion fails', () => {
     const thrown = { toString() { throw new Error('cannot render') } }
-    expect(prepareException(thrown, 1_000)).toEqual({
+    expect(prepareException(thrown, 3, 1_000)).toEqual({
       error: { kind: 'exception', message: 'program threw an unrenderable value' },
     })
 
     const strangeStack = Object.defineProperty(new Error('ignored'), 'stack', { value: 42 })
-    expect(prepareException(strangeStack, 1_000)).toEqual({
+    expect(prepareException(strangeStack, 3, 1_000)).toEqual({
       error: { kind: 'exception', message: '42' },
     })
+  })
+
+  it('rewrites an Error stack while passing a thrown string through untouched', () => {
+    const thrown = Object.defineProperty(new Error('boom'), 'stack', { value: `Error: boom\n${HARNESS_FRAME}\n${PROGRAM_TOP_FRAME}` })
+    expect(prepareException(thrown, 3, 1_000)).toEqual({
+      error: { kind: 'exception', message: 'Error: boom\n    at program:2:19' },
+    })
+    const lookalike = `Error: boom\n${HARNESS_FRAME}`
+    expect(prepareException(lookalike, 3, 1_000)).toEqual({ error: { kind: 'exception', message: lookalike } })
+  })
+})
+
+describe('programHeaderLines', () => {
+  it('measures exactly the lines that precede the model\'s first line', () => {
+    const body = "'use strict';\nconst x = 1;\nreturn x;"
+    /* v8 ignore next -- the arrow only reaches the AsyncFunction constructor. */
+    const AsyncFunction = (async () => {}).constructor as new (...args: string[]) => (...fnArgs: unknown[]) => Promise<unknown>
+    const source = new AsyncFunction('tools', 'console', body).toString()
+    // Skipping the measured count lands on the model's line 1, whatever header
+    // V8 synthesized.
+    expect(source.split('\n').slice(programHeaderLines(source, body))).toEqual(['const x = 1;', 'return x;', '}'])
+  })
+
+  it('reports no measurement when the body is absent from the source', () => {
+    expect(programHeaderLines('async function anonymous(\n) {\n}', "'use strict';\nreturn 1")).toBeUndefined()
+  })
+})
+
+describe('normalizeProgramStack', () => {
+  it('states program frames in the model\'s coordinates and drops the harness ones', () => {
+    expect(normalizeProgramStack(`TypeError: not iterable\n${PROGRAM_TOP_FRAME}\n${HARNESS_FRAME}`, 3))
+      .toBe('TypeError: not iterable\n    at program:2:19')
+  })
+
+  it('keeps a multi-line message and every program frame\'s name and await prefix', () => {
+    const stack = [
+      'Error: line1',
+      'line2',
+      '    at Object.method (eval at runWorkerMain (/repo/lib/worker.cjs:887:31), <anonymous>:4:31)',
+      '    at async step (eval at runWorkerMain (/repo/lib/worker.cjs:887:31), <anonymous>:5:3)',
+      '    at async eval (eval at runWorkerMain (/repo/lib/worker.cjs:887:31), <anonymous>:7:1)',
+    ].join('\n')
+    expect(normalizeProgramStack(stack, 3)).toBe([
+      'Error: line1',
+      'line2',
+      '    at Object.method (program:1:31)',
+      '    at async step (program:2:3)',
+      '    at async program:4:1',
+    ].join('\n'))
+  })
+
+  it('drops every frame when no measurement relates a reported line to a written one', () => {
+    expect(normalizeProgramStack(`TypeError: not iterable\n${PROGRAM_TOP_FRAME}\n${HARNESS_FRAME}`, undefined))
+      .toBe('TypeError: not iterable')
+  })
+
+  it('drops a frame that maps above the program\'s first line', () => {
+    expect(normalizeProgramStack(`TypeError: not iterable\n${PROGRAM_TOP_FRAME}`, 5)).toBe('TypeError: not iterable')
+  })
+
+  it('returns a frameless diagnostic untouched', () => {
+    expect(normalizeProgramStack('SyntaxError: Unexpected end of input', 3)).toBe('SyntaxError: Unexpected end of input')
   })
 })
 
@@ -351,6 +419,36 @@ describe('runWorkerMain', () => {
     expect(done?.type === 'done' ? done.error?.kind : undefined).toBe('exception')
     expect(done?.type === 'done' ? done.error?.message : undefined).toContain('boom')
     expect(done?.type === 'done' ? done.value : undefined).toBeUndefined()
+  })
+
+  it('locates a thrown program error at the line and column the model wrote', async () => {
+    const port = new FakePort()
+    port.respond = message => message.type === 'call'
+      ? { type: 'reply', id: message.id, ok: true, value: encodeWorkerJson({ root: '.', paths: [] }) }
+      : undefined
+    await runWorkerMain(port, {
+      ...BOOT,
+      // The tool answers an object, so array-destructuring it throws on the
+      // program's SECOND line — the one the model must fix.
+      code: [
+        '// Find the plugin-list UI.',
+        'const [first] = await tools.glob({ pattern: "*.ts" });',
+        'return first;',
+      ].join('\n'),
+      namespaces: [toolNamespace(['glob'])],
+    }, fakeStreams())
+    const done = port.done()
+    expect(done?.type === 'done' ? done.error?.message : undefined)
+      .toBe('TypeError: (intermediate value) is not iterable\n    at program:2:17')
+  })
+
+  it('states a body that does not compile without inventing a location', async () => {
+    const port = new FakePort()
+    await runWorkerMain(port, { ...BOOT, code: 'return (', namespaces: [] }, fakeStreams())
+    const done = port.done()
+    const message = done?.type === 'done' ? done.error?.message : undefined
+    expect(message).toMatch(/^SyntaxError: /)
+    expect(message?.split('\n')).toHaveLength(1)
   })
 
   it('renders non-Error throws and stack-less Errors on the done message', async () => {

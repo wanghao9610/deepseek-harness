@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCloseFill14, IconPersonalizationOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
+  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, shortcutLabel, Tooltip, useShortcut,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionId, SessionListState, SessionSearchResultItem, WorkspaceId, WorkspaceView,
@@ -37,6 +37,13 @@ const SEARCH_DEBOUNCE_MS = 250
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
+
+/**
+ * Chord for the region's search. Shift is what keeps it off the browser's own
+ * find-in-page, which stays the reader's; `⇧⌘F` is where an application puts
+ * searching its own content.
+ */
+const SEARCH_CHORD = { key: 'f', shift: true } as const
 
 /** Keep controlled input and RPC payload inside the session.search wire contract. */
 function sanitizeSearchQuery(value: string): string {
@@ -799,9 +806,26 @@ export function WorkspaceBrowser({
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
+  // The region owns the add affordance, so it owns the chord for it; the
+  // button it raises renders in both sidebar states. The chord reads the same
+  // occupancy the button does, because opening over an empty hole would leave
+  // this state armed for an occupant that mounts later to raise unasked.
+  useShortcut('o', () => { if (directoryFlowAvailable) setWsPickerOpen(true) })
+
   // Rail search = expand + land in the search box: the flag arms before the
   // expand request; once the shell flips wide the input mounts and takes focus.
   const [searchOnExpand, setSearchOnExpand] = useState(false)
+
+  // The search chord takes each state's own route to the box — the rail's
+  // arm-then-expand, the wide column's plain reveal — because the box only
+  // exists in the wide column and the rail's control asks the shell for it.
+  useShortcut(SEARCH_CHORD, () => {
+    setWsPickerOpen(false)
+    setSearchExpanded(true)
+    if (wide) return
+    setSearchOnExpand(true)
+    expandSidebar()
+  })
   useEffect(() => {
     if (wide && searchOnExpand) {
       const timer = window.setTimeout(() => {
@@ -991,7 +1015,7 @@ export function WorkspaceBrowser({
                 searchInput.current?.focus()
               }}
             >
-              <Tooltip label={t('search')} side="bottom" delayMs={500} disabled={searchExpanded}>
+              <Tooltip label={`${t('search')} ${shortcutLabel(SEARCH_CHORD)}`} side="bottom" delayMs={500} disabled={searchExpanded}>
                 <button
                   type="button"
                   className={css.searchButton}
@@ -1051,7 +1075,7 @@ export function WorkspaceBrowser({
               picking affordance has nothing to offer here: the region hides the
               button rather than leaving a dead one in the header. */}
           {directoryFlowAvailable && (
-            <Tooltip label={t('workspace.add')} side="bottom" delayMs={500}>
+            <Tooltip label={`${t('workspace.add')} ${shortcutLabel('o')}`} side="bottom" delayMs={500}>
               <button
                 ref={wsPlusRef}
                 type="button"
@@ -1087,7 +1111,7 @@ export function WorkspaceBrowser({
 
       {/* The collapsed rail keeps search as its own 36px control. */}
       {!wide && <div className={css.search}>
-        <Tooltip label={t('search')}>
+        <Tooltip label={`${t('search')} ${shortcutLabel(SEARCH_CHORD)}`}>
           <button
             type="button"
             className={css.searchButton}

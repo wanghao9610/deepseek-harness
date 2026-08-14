@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-app-boot
  */
 
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
@@ -804,21 +804,67 @@ export async function boot(
 /** Prompt-section name for the harness-source location line an app bin adds after boot. */
 export const HARNESS_SOURCE_SECTION = 'harness:source'
 
+/** Root manifest name of the Harness workspace: the marker that identifies an implementation checkout. */
+const CHECKOUT_ROOT_PACKAGE = '@deepseek-ai/dsh-root'
+
+/** Whether `dir` holds the Harness workspace's root manifest. */
+function isCheckoutRoot(dir: string): boolean {
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8'))
+  } catch {
+    // An absent, unreadable, or non-JSON manifest belongs to an ordinary
+    // directory on the way up; only the marker name below identifies the root.
+    return false
+  }
+  return typeof manifest === 'object' && manifest !== null
+    && (manifest as { name?: unknown }).name === CHECKOUT_ROOT_PACKAGE
+}
+
+/**
+ * Resolve the Harness implementation checkout containing one caller module by
+ * walking its directory chain to the workspace root manifest
+ * (`@deepseek-ai/dsh-root`).
+ *
+ * A package sits at `packages/<group>/<pkg>/` in the checkout and at
+ * `node_modules/@deepseek-ai/<pkg>/` once installed, so counting directory
+ * levels up from a module cannot tell a checkout root from an install root: an
+ * install root carries the installing application's own manifest and holds
+ * compiled `lib/` output, never harness sources. The walk is what proves the
+ * checkout {@link addHarnessSourceSection} points a model at is really there.
+ *
+ * @param moduleUrl - the calling module's `import.meta.url`.
+ * @returns the absolute checkout root, or `undefined` when the module runs from an installed package tree.
+ */
+export function resolveHarnessCheckout(moduleUrl: string | URL): string | undefined {
+  let dir = dirname(fileURLToPath(moduleUrl))
+  for (;;) {
+    if (isCheckoutRoot(dir)) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
 /**
  * Add a global prompt section naming the on-disk harness source checkout while
  * explicitly distinguishing it from the task workspace and current working
  * directory. The self-referential `dsh-tool-cordis` toolset reads and edits this
  * checkout. Call once on the settled boot context ({@link boot}); the section
  * orders just after the harness identity opener (`-100`) and before the deployment
- * persona (`0`). A booted tree with no `systemPrompt` service has no prompt to
- * augment, so this is then a no-op that returns `undefined`. The section is
- * registered against the `systemPrompt` service's fiber, so a dev HMR reload of
- * that plugin drops it until the next boot.
+ * persona (`0`). The section is registered against the `systemPrompt` service's
+ * fiber, so a dev HMR reload of that plugin drops it until the next boot.
+ *
+ * Nothing is registered when the booted tree has no `systemPrompt` service to
+ * augment, or when `sourceRoot` is `undefined`: an installed package tree has no
+ * checkout ({@link resolveHarnessCheckout}), and announcing one that is not
+ * there sends the model reading paths that do not exist.
  * @param ctx - the settled boot context whose global system prompt to augment.
- * @param sourceRoot - the absolute path to the harness checkout root.
- * @returns the section disposer, or `undefined` when no `systemPrompt` service is mounted.
+ * @param sourceRoot - the absolute path to the harness checkout root, or `undefined` when no checkout contains the running code.
+ * @returns the section disposer, or `undefined` when no section was registered.
  */
-export function addHarnessSourceSection(ctx: Context, sourceRoot: string): (() => void) | undefined {
+export function addHarnessSourceSection(ctx: Context, sourceRoot: string | undefined): (() => void) | undefined {
+  if (sourceRoot === undefined) return undefined
   const systemPrompt = ctx.get('systemPrompt')
   if (systemPrompt === undefined) return undefined
   return systemPrompt.section({

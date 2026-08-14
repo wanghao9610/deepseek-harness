@@ -8,6 +8,7 @@
 import { inspect } from 'node:util'
 import type { DoneMessage, ReplyMessage, WorkerBootData, WorkerToHost } from './protocol.ts'
 import { jsonStringBytesUpTo, jsonValueBytesUpTo, truncateJsonStringBytes } from './output-json.ts'
+import { programLocation } from './program-location.ts'
 import { decodeWorkerJson, encodeWorkerJson, snapshotCodeJsonValue } from './worker-json.ts'
 
 const CapturedError = Error
@@ -206,15 +207,94 @@ function prepareFailure(
 }
 
 /**
+ * The strict-mode directive the program body opens with. It occupies the
+ * body's first line, so the model's line 1 is the body's line 2.
+ */
+const PROGRAM_DIRECTIVE = "'use strict';\n"
+
+/** Any rendered stack frame, in V8's fixed `<indent>at ` form. */
+const STACK_FRAME = /^\s+at /
+
+/**
+ * One frame in code the `Function` constructor compiled:
+ * `    at <name> (eval at <worker frame>, <anonymous>:<line>:<column>)`. The
+ * embedded worker frame names this file's absolute path on the host disk, and
+ * the `<anonymous>` line counts V8's synthesized header, so neither half is
+ * what the model wrote.
+ */
+const PROGRAM_FRAME = /^\s*at (.+?) \(eval at .+, <anonymous>:(\d+):(\d+)\)$/
+
+/** V8's name for the program's own top-level frame (a user function cannot take it: `eval` is not a bindable strict-mode name). */
+const TOP_LEVEL_FRAME = 'eval'
+
+/** The prefix V8 puts on an awaited frame's name, preserved ahead of the rewritten location. */
+const ASYNC_PREFIX = 'async '
+
+/**
+ * Count the synthesized lines that precede the model's first program line:
+ * V8's dynamic-function header plus {@link PROGRAM_DIRECTIVE}. Measured from
+ * the constructed function instead of assumed, so a change in how V8 renders
+ * that header cannot silently shift every location the model reads.
+ * @param source - `Function.prototype.toString()` of the constructed program.
+ * @param body - the exact body text passed to the constructor.
+ * @returns the leading line count, or `undefined` when the body is absent from
+ *   the source (nothing then relates a reported line to a written one).
+ */
+export function programHeaderLines(source: string, body: string): number | undefined {
+  const bodyStart = source.indexOf(body)
+  if (bodyStart < 0) return undefined
+  const linesBeforeBody = source.slice(0, bodyStart).split('\n').length - 1
+  return linesBeforeBody + PROGRAM_DIRECTIVE.split('\n').length - 1
+}
+
+/**
+ * Restate one thrown error's stack in the program's own coordinates: each
+ * frame V8 attributed to the compiled program becomes
+ * `program:<line>:<column>` counted from the model's first line, and every
+ * other frame — this file, Node internals, and the host paths they name — is
+ * dropped. The model reads the line it wrote and learns nothing about where
+ * the harness lives on disk. The message is everything before the first frame,
+ * kept verbatim.
+ * @param stack - the raw `Error.prototype.stack` text.
+ * @param headerLines - synthesized lines preceding the program's line 1
+ *   ({@link programHeaderLines}); `undefined` drops every frame, because no
+ *   location can then be stated in the model's coordinates.
+ * @returns the message followed by the surviving rewritten frames.
+ */
+export function normalizeProgramStack(stack: string, headerLines: number | undefined): string {
+  const lines = stack.split('\n')
+  const firstFrame = lines.findIndex(line => STACK_FRAME.test(line))
+  if (firstFrame < 0) return stack
+  const rendered = lines.slice(0, firstFrame)
+  if (headerLines === undefined) return rendered.join('\n')
+  for (const line of lines.slice(firstFrame)) {
+    const frame = PROGRAM_FRAME.exec(line)
+    if (frame?.[1] === undefined || frame[2] === undefined || frame[3] === undefined) continue
+    const programLine = Number(frame[2]) - headerLines
+    if (programLine < 1) continue
+    const prefix = frame[1].startsWith(ASYNC_PREFIX) ? ASYNC_PREFIX : ''
+    const name = frame[1].slice(prefix.length)
+    const location = programLocation(programLine, Number(frame[3]))
+    rendered.push(name === TOP_LEVEL_FRAME
+      ? `    at ${prefix}${location}`
+      : `    at ${prefix}${name} (${location})`)
+  }
+  return rendered.join('\n')
+}
+
+/**
  * Prepare a thrown program value without sending an unbounded stack or
  * string across the worker port.
  * @param error - the value thrown by the program.
+ * @param headerLines - synthesized lines preceding the program's line 1, for
+ *   {@link normalizeProgramStack}.
  * @param remainingOutputBytes - exact bytes left after captured logs.
  * @param maxOutputBytes - the configured cap named in an overflow diagnostic.
  * @returns a bounded exception or fixed output-limit fragment.
  */
 export function prepareException(
   error: unknown,
+  headerLines: number | undefined,
   remainingOutputBytes: number,
   maxOutputBytes: number = remainingOutputBytes,
 ): Omit<DoneMessage, 'type'> {
@@ -222,6 +302,9 @@ export function prepareException(
   try {
     const detail: unknown = error instanceof CapturedError ? error.stack ?? error.message : error
     message = typeof detail === 'string' ? detail : String(detail)
+    // A thrown non-Error carries no frames to rewrite, and its text is the
+    // program's own value: pass it through untouched.
+    if (error instanceof CapturedError) message = normalizeProgramStack(message, headerLines)
   } catch {
     message = 'program threw an unrenderable value'
   }
@@ -398,16 +481,21 @@ export async function runWorkerMain(
   const consoleShim = makeConsoleShim(logs)
 
   let done: DoneMessage
+  const body = `${PROGRAM_DIRECTIVE}${data.code}`
+  // Kept outside the try so a failure can be located in the program's own
+  // coordinates; a body that does not compile leaves it undefined, and such a
+  // failure has no program frames to locate.
+  let fn: ((...fnArgs: unknown[]) => Promise<unknown>) | undefined
   try {
     // The async function constructor, reached through an instance because
     // `AsyncFunction` is not a global. The program body is strict-mode.
     /* v8 ignore next -- the arrow exists only to reach the AsyncFunction constructor; it is never invoked. */
     const AsyncFunction = (async () => {}).constructor as new (...args: string[]) => (...fnArgs: unknown[]) => Promise<unknown>
-    const fn = new AsyncFunction(
+    fn = new AsyncFunction(
       ...data.namespaces.map(namespace => namespace.global),
       ...errorClassParameters,
       'console',
-      `'use strict';\n${data.code}`,
+      body,
     )
     const value = await fn(...namespaces, ...errorClassValues, consoleShim)
     done = {
@@ -417,7 +505,12 @@ export async function runWorkerMain(
   } catch (error: unknown) {
     done = {
       type: 'done',
-      ...prepareException(error, logs.remainingOutputBytes(), data.maxOutputBytes),
+      ...prepareException(
+        error,
+        fn === undefined ? undefined : programHeaderLines(fn.toString(), body),
+        logs.remainingOutputBytes(),
+        data.maxOutputBytes,
+      ),
     }
   }
   port.postMessage(done)

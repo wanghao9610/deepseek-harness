@@ -8,7 +8,8 @@ import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
   addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
-  installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
+  installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, resolveHarnessCheckout,
+  type FailLoudProcess,
 } from '../src/index.ts'
 
 const NAME = 'dsh-test-bin'
@@ -817,6 +818,18 @@ describe('addHarnessSourceSection', () => {
     }
   })
 
+  it('announces no checkout when there is none: an installed tree registers no section', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt, { persona: 'You are a coding agent.' })
+      expect(addHarnessSourceSection(ctx, undefined)).toBeUndefined()
+      const assembly = await ctx.get('systemPrompt')!.assemble()
+      expect(assembly.sections.some(section => section.name === HARNESS_SOURCE_SECTION)).toBe(false)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('disposes the section it added, so a systemPrompt reload leaves no residue', async () => {
     const ctx = new Context()
     try {
@@ -831,5 +844,29 @@ describe('addHarnessSourceSection', () => {
     } finally {
       await ctx.fiber.dispose()
     }
+  })
+})
+
+describe('resolveHarnessCheckout', () => {
+  it('walks a module in this workspace up to the checkout root', () => {
+    const root = resolveHarnessCheckout(import.meta.url)
+    expect(root).toBeTypeOf('string')
+    // Pins the marker constant to the real workspace: renaming the root
+    // manifest without updating it silently drops the prompt section.
+    const own: unknown = JSON.parse(readFileSync(join(root!, 'packages', 'boot', 'app-boot', 'package.json'), 'utf8'))
+    expect((own as { name: string }).name).toBe('@deepseek-ai/dsh-app-boot')
+  })
+
+  it('reports no checkout from an installed package tree, whatever manifests lie on the way up', () => {
+    const dir = tmp()
+    const pkg = join(dir, 'node_modules', '@deepseek-ai', 'dsh-web-app')
+    mkdirSync(join(pkg, 'lib'), { recursive: true })
+    // The install root's own manifest, and every malformed manifest a walk can
+    // meet: unparsable, valid JSON that is not an object, and JSON null.
+    writeFileSync(join(dir, 'package.json'), '{"name":"some-app-runtime"}\n')
+    writeFileSync(join(dir, 'node_modules', 'package.json'), '"not an object"\n')
+    writeFileSync(join(dir, 'node_modules', '@deepseek-ai', 'package.json'), '{ broken\n')
+    writeFileSync(join(pkg, 'package.json'), 'null\n')
+    expect(resolveHarnessCheckout(pathToFileURL(join(pkg, 'lib', 'index.js')))).toBeUndefined()
   })
 })

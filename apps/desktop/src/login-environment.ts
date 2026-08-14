@@ -48,10 +48,19 @@ export interface LoginProbeOptions {
 
 /**
  * Whether the inherited environment lacks a user profile and is worth probing for.
+ *
+ * The probe exists for macOS Finder launches, which inherit launchd's four
+ * system directories as `PATH`. Windows Explorer and a Linux desktop session
+ * already hand the user environment to a GUI application, so they never probe.
  * @param env - the inherited environment.
- * @returns true when `PATH` is absent or holds only launchd's system entries.
+ * @param platform - the host OS; defaults to this process.
+ * @returns true when this is macOS and `PATH` is absent or holds only launchd's system entries.
  */
-export function needsLoginEnvironment(env: NodeJS.ProcessEnv): boolean {
+export function needsLoginEnvironment(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== 'darwin') return false
   const path = env.PATH
   if (path === undefined || path === '') return true
   return path.split(':').filter(entry => entry !== '').every(entry => LAUNCHD_PATH_ENTRIES.has(entry))

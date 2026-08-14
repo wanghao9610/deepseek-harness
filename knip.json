@@ -800,6 +800,21 @@
       "ignoreDependencies": [
         "@deepseek-ai/.+"
       ]
+    },
+    "packages/bundle/tui-app": {
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
+    "packages/tui/tui": {
+      "entry": [
+        "tests/**/*.spec.ts",
+        "tests/**/*.snapshot.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
     }
   }
 }

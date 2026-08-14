@@ -5,6 +5,7 @@ import {
   decideResourceAction,
   defaultHeapLimitMb,
   defaultRecycleThreshold,
+  processRssCommand,
   type ResourceSample,
 } from '../src/resource-governor.ts'
 
@@ -83,5 +84,26 @@ describe('defaultHeapLimitMb', () => {
 
   it('never exceeds the ceiling', () => {
     expect(defaultHeapLimitMb(128 * GIB)).toBe(8192)
+  })
+})
+
+describe('processRssCommand', () => {
+  it('reads kibibytes from ps on Unix', () => {
+    const command = processRssCommand(42, 'darwin')
+    expect(command.file).toBe('/bin/ps')
+    expect(command.args).toEqual(['-o', 'rss=', '-p', '42'])
+    expect(command.parse('  4096\n')).toBe(4096 * 1024)
+  })
+
+  it('reads bytes from PowerShell on Windows', () => {
+    const command = processRssCommand(42, 'win32')
+    expect(command.file).toBe('powershell.exe')
+    expect(command.args).toEqual(['-NoProfile', '-Command', '(Get-Process -Id 42).WorkingSet64'])
+    expect(command.parse('4194304\r\n')).toBe(4194304)
+  })
+
+  it('treats non-numeric output as unreadable', () => {
+    expect(processRssCommand(1, 'linux').parse('rss')).toBeUndefined()
+    expect(processRssCommand(1, 'win32').parse('')).toBeUndefined()
   })
 })

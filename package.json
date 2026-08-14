@@ -138,6 +138,7 @@
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "package:mac": "tsx scripts/package-macos-app.ts",
     "package:desktop": "tsx scripts/package-desktop-app.ts",
+    "package:remote-server": "tsx scripts/package-remote-server.ts",
     "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows-app.ps1",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
     "demo:cordis": "node scripts/demo-cordis.mjs",

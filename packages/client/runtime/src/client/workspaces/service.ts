@@ -9,6 +9,7 @@ import type { SnapshotStore } from '../contract/store.ts'
 import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionsPort, SessionsPortList } from '../contract/sessions-port.ts'
 import type { IWorkspaces } from '../contract/workspaces.ts'
+import { DEFAULT_WINDOW_BOOT, type WindowBoot } from '../window-boot.ts'
 import { WorkspaceManager, type WorkspaceListPhase } from './manager.ts'
 
 /** Workspace list plus the two-baseline readiness and default-target projection. */
@@ -121,9 +122,10 @@ export class WorkspaceRuntime implements IWorkspaces {
    * recent Workspace is connected (reusing or creating its blank session).
    * Later explicit clears stay cleared instead of retriggering this startup
    * policy. A failed connect may retry on the next baseline projection.
+   * @param boot - what this window was opened for; a new window mints its own session.
    * @returns disposer for the baseline subscription; late work cannot navigate after disposal.
    */
-  startInitialSelection(): () => void {
+  startInitialSelection(boot: WindowBoot = DEFAULT_WINDOW_BOOT): () => void {
     if (this.initialSelectionStarted) {
       throw new Error('workspaces.startInitialSelection: already started')
     }
@@ -141,7 +143,13 @@ export class WorkspaceRuntime implements IWorkspaces {
         return
       }
       state = 'connecting'
-      void this.connectWorkspace(target).then(
+      // Blank-session reuse is what New Session wants and what a new window
+      // must not have: the blank it would reuse is the one another window is
+      // already showing, and both would then run the same conversation.
+      void (boot.freshSession
+        ? this.sessions.create({ workspaceId: target })
+        : this.connectWorkspace(target)
+      ).then(
         (sessionId) => {
           if (disposed) return
           if (this.sessions.list.getSnapshot().current === undefined) {

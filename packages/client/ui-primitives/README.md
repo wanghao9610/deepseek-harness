@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Pure React atoms (zero cordis): StateDot, DisclosureRow, ic_ds_* icons, Button/Pill/Menu/Modal/Input, the Toast transient banner, the OnboardingSurface first-run takeover (body-portaled mask + opaque stage that holds `#root` inert for exactly its own lifetime), the markdown family (MessageText/MarkdownText/JsonBlock), the read-only JsonTree inspector, the `useAnchoredMaxHeight` hook that clamps a bottom-anchored overlay to the viewport space above its anchor (re-measured on resize, scroll, and a caller-supplied dependency), TerminalBlock, DiffBlock, ReadBlock, SearchBlock, and WebBlock.
+Pure React atoms (zero cordis): StateDot, DisclosureRow, ic_ds_* icons, Button/Pill/Menu/Modal/Input, the Toast transient banner, the OnboardingSurface first-run takeover (body-portaled mask + opaque stage that holds `#root` inert for exactly its own lifetime), the markdown family (MessageText/MarkdownText/JsonBlock), the read-only JsonTree inspector, the `useAnchoredMaxHeight` hook that clamps a bottom-anchored overlay to the viewport space above its anchor (re-measured on resize, scroll, and a caller-supplied dependency), the `useShortcut` hook that binds one document-level chord to an action — a bare key, or `{ key, shift }` where Shift is part of the chord's identity in both directions, which is how a chord reaches keys a browser's own menu bar has not claimed (with `shortcutLabel`, which writes that chord the way its platform does, for a control that announces it), TerminalBlock, DiffBlock, ReadBlock, SearchBlock, and WebBlock.
 
 ## Hover cards
 

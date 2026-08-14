@@ -1,22 +1,24 @@
 /** Runtime entry resolution for the two layouts the shell runs from. */
 
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { resolveRuntimeEntry } from '../src/paths.ts'
 
 describe('resolveRuntimeEntry', () => {
   it('resolves the deployed closure inside an installed application', () => {
+    const resourcesPath = join('/Applications', 'DeepSeek Harness.app', 'Contents', 'Resources')
     expect(resolveRuntimeEntry({
       packaged: true,
-      resourcesPath: '/Applications/DeepSeek Harness.app/Contents/Resources',
-      appPath: '/Applications/DeepSeek Harness.app/Contents/Resources/app',
-    })).toBe('/Applications/DeepSeek Harness.app/Contents/Resources/backend/node_modules/@deepseek-ai/dsh/lib/bin.js')
+      resourcesPath,
+      appPath: join(resourcesPath, 'app'),
+    })).toBe(join(resourcesPath, 'backend', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
   })
 
   it('resolves the sibling CLI build in a checkout run', () => {
     expect(resolveRuntimeEntry({
       packaged: false,
       resourcesPath: '/unused',
-      appPath: '/repo/apps/desktop',
-    })).toBe('/repo/apps/cli/lib/bin.js')
+      appPath: join('/repo', 'apps', 'desktop'),
+    })).toBe(join('/repo', 'apps', 'cli', 'lib', 'bin.js'))
   })
 })

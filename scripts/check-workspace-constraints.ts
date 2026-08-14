@@ -30,6 +30,7 @@ const vendoredPackages = new Set([
   '@deepseek-ai/cordis-plugin-timer',
   '@deepseek-ai/cordis-plugin-hmr',
   '@deepseek-ai/cordis-plugin-logger-console',
+  '@deepseek-ai/tui',
 ])
 const publicLandlockPackages = new Set([
   '@deepseek-ai/node-addon-landlock-run',
@@ -142,6 +143,11 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
+  '@deepseek-ai/dsh-tui-app': ['cordis.patch.yml'],
+  // The terminal front door's prompt-value registry is a Loader row of its own
+  // (`@deepseek-ai/dsh-tui/prompt`), so it ships as its own bundle for the same
+  // reason a surface bundle's startup row does.
+  '@deepseek-ai/dsh-tui': ['lib/prompt.js'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
   // keeps config-owned bare-package resolution through lib/bin.js.

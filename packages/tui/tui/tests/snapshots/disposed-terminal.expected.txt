@@ -1,0 +1,101 @@
+terminal 92x32 buffer=normal length=50 base=18 viewport=18
+lifecycle started=1 stopped=1 progress=inactive
+title "DSH snapshot"
+cursor visible column=0 viewportRow=31 bufferRow=49
+buffer
+0| "      ▄▄▄▄▄▄▄██▀    █▄      ▄"
+  style 1-28 fg=bright-magenta
+1| "   ▄███████████▄▄   ███▄▄████"
+  style 1-28 fg=bright-magenta
+2| "  ████████████████▄ ▀██████▀"
+  style 1-27 fg=bright-magenta
+3| " ██▀▀▀▀▀████████████▄▄██▀"
+  style 1-24 fg=bright-magenta
+4| " ██       ▀█████▄ ▀█████"
+  style 1-23 fg=bright-magenta
+5| " ██▄        ▀████▄ ▄████"
+  style 1-23 fg=bright-magenta
+6| "  ██▄         ████████▀"
+  style 1-22 fg=bright-magenta
+7| "   ██▄    ▄▄   ▀█████▀"
+  style 1-21 fg=bright-magenta
+8| "    ▀███▄▄▄███▄  ████▄▄"
+  style 1-22 fg=bright-magenta
+9| "      ▀▀▀███████▀▀"
+  style 1-17 fg=bright-magenta
+10| " "
+11| " DEEPSEEK HARNESS"
+  style 1-8 fg=bright-magenta bold
+  style 10-16 bold
+12| " Snapshot agent ready."
+  style 1-21 dim
+13| " main-session"
+  style 1-12 dim
+14| <blank>
+15| "Assistant                                                                                   "
+  style 0-8 fg=bright-magenta bold underline
+16| "Model wait 0.0s · Completed 2026-07-21 15:05:00                                             "
+  style 0-46 dim
+17| <blank>
+18| "Keyboard shortcuts                                                                          "
+  style 0-17 fg=bright-magenta bold
+19| "Enter send • Shift/Alt+Enter newline • Up/Down prompt history                               "
+  style 0-60 dim
+20| "Esc cancel turn • Ctrl+O cycle cards (collapse/expand/hide) • Ctrl+R toggle reasoning •     "
+  style 0-91 dim
+21| "Ctrl+L redraw                                                                               "
+  style 0-12 dim
+22| "Ctrl+C cancel while running; clear input or exit while idle • Ctrl+D exit                   "
+  style 0-72 dim
+23| "                                                                                            "
+24| "/clear — Clear the transcript view (session history is unchanged)                           "
+  style 0-64 dim
+25| "/details [collapsed|expanded|hidden] [reasoning [on|off]] — Select tool-card visibility and "
+  style 0-91 dim
+26| "reasoning display                                                                           "
+  style 0-16 dim
+27| "/exit — Exit after the active turn reaches idle                                             "
+  style 0-46 dim
+28| "/help — Show keyboard shortcuts and commands                                                "
+  style 0-43 dim
+29| "/model [[provider/]model] — Show or switch this session's model                             "
+  style 0-62 dim
+30| "/palette — Show every color and attribute role this terminal renders                        "
+  style 0-67 dim
+31| "/quit — Exit after the active turn reaches idle                                             "
+  style 0-46 dim
+32| "/reload — EXPERIMENTAL (dev): re-read loader config files and apply the diff (idle only)    "
+  style 0-87 dim
+33| "/resume — List this workspace's resumable sessions                                          "
+  style 0-49 dim
+34| "/status — Show session diagnostics, system prompt, and registered tools                     "
+  style 0-70 dim
+35| "/skill:<name> [instructions] — load a skill into the conversation                           "
+  style 0-64 dim
+36| <blank>
+37| "provider stream failed after partial output                                                 "
+  style 0-42 fg=red
+38| <blank>
+39| "The previous process ended during this turn.                                                "
+  style 0-43 fg=yellow
+40| <blank>
+41| "Turn stopped: the agent was disposed.                                                       "
+  style 0-36 fg=yellow
+42| <blank>
+43| "Turn ended: plugin-policy.                                                                  "
+  style 0-25 fg=yellow
+44| <blank>
+45| "Unknown command: /unknown-advanced-command                                                  "
+  style 0-41 fg=yellow
+46| <blank>
+47| "/workspace/project (tui-staging)  deepseek-v4-flash  ↑0 ↓0  0% context"
+  style 0-17 fg=bright-magenta bold
+  style 18-31 dim
+  style 34-50 dim
+  style 53-57 dim
+  style 60-69 dim
+48| " dsh >                                                                                      "
+  style 1-3 fg=bright-magenta bold
+  style 5-6 dim
+  style 7-7 inverse
+49| <blank>

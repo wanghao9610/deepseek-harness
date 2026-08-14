@@ -8,6 +8,19 @@ interface State {
 
 const init = (): State => ({ a: { n: 1 }, b: { list: ['x'] } })
 
+/**
+ * Back one web-storage global with a map the test can read and move.
+ * @param global - 'localStorage' or 'sessionStorage'.
+ * @param backing - the cells it holds.
+ */
+function stubStorage(global: string, backing: Map<string, string>): void {
+  vi.stubGlobal(global, {
+    getItem: (k: string) => backing.get(k) ?? null,
+    setItem: (k: string, v: string) => { backing.set(k, v) },
+    removeItem: (k: string) => { backing.delete(k) },
+  })
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -121,6 +134,45 @@ describe('createSnapshotStore', () => {
     expect(backing.has('spec-store')).toBe(true)
     const revived = createSnapshotStore(init(), { persist: { name: 'spec-store' } })
     expect(revived.getSnapshot().a.n).toBe(42)
+  })
+
+  it('window scope answers from its own cell, seeds from the shared one, and writes both', () => {
+    const shared = new Map<string, string>([['spec-window', JSON.stringify({ a: { n: 9 }, b: { list: [] } })]])
+    const own = new Map<string, string>()
+    stubStorage('localStorage', shared)
+    stubStorage('sessionStorage', own)
+    // A window that has never selected anything starts where the browser left off.
+    const first = createSnapshotStore(init(), { persist: { name: 'spec-window', scope: 'window' } })
+    expect(first.getSnapshot().a.n).toBe(9)
+    first.update((d) => { d.a.n = 10 })
+    expect(own.get('spec-window')).toContain('10')
+    expect(shared.get('spec-window')).toContain('10')
+    // Another window moving the shared cell does not move this one; a reload
+    // of this window stays where this window was.
+    shared.set('spec-window', JSON.stringify({ a: { n: 99 }, b: { list: [] } }))
+    const reloaded = createSnapshotStore(init(), { persist: { name: 'spec-window', scope: 'window' } })
+    expect(reloaded.getSnapshot().a.n).toBe(10)
+  })
+
+  it('origin scope stays on the shared cell even where per-window storage exists', () => {
+    const shared = new Map<string, string>()
+    const own = new Map<string, string>()
+    stubStorage('localStorage', shared)
+    stubStorage('sessionStorage', own)
+    const store = createSnapshotStore(init(), { persist: { name: 'spec-origin' } })
+    store.update((d) => { d.a.n = 7 })
+    expect(shared.get('spec-origin')).toContain('7')
+    expect(own.has('spec-origin')).toBe(false)
+  })
+
+  it('window scope falls back to the shared cell alone where per-window storage is absent', () => {
+    const shared = new Map<string, string>()
+    stubStorage('localStorage', shared)
+    vi.stubGlobal('sessionStorage', undefined)
+    const store = createSnapshotStore(init(), { persist: { name: 'spec-shared-only', scope: 'window' } })
+    store.update((d) => { d.a.n = 5 })
+    const revived = createSnapshotStore(init(), { persist: { name: 'spec-shared-only', scope: 'window' } })
+    expect(revived.getSnapshot().a.n).toBe(5)
   })
 })
 

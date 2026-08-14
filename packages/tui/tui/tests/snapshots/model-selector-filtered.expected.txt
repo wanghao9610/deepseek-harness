@@ -1,0 +1,61 @@
+terminal 92x32 buffer=normal length=32 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+title "DSH snapshot"
+cursor hidden column=15 viewportRow=13 bufferRow=13
+buffer
+0| "      ▄▄▄▄▄▄▄██▀    █▄      ▄"
+  style 1-28 fg=bright-magenta
+1| "   ▄███████████▄▄   ███▄▄████"
+  style 1-28 fg=bright-magenta
+2| "  ████████████████▄ ▀██████▀"
+  style 1-27 fg=bright-magenta
+3| " ██▀▀▀▀▀████████████▄▄██▀"
+  style 1-24 fg=bright-magenta
+4| " ██       ▀█████▄ ▀█████"
+  style 1-23 fg=bright-magenta
+5| " ██▄        ▀████▄ ▄████"
+  style 1-23 fg=bright-magenta
+6| "  ██▄         ████████▀"
+  style 1-22 fg=bright-magenta
+7| "   ██▄    ▄▄   ▀█████▀"
+  style 1-21 fg=bright-magenta
+8| "    ▀███▄▄▄███▄  ████▄▄"
+  style 1-22 fg=bright-magenta
+9| "      ▀▀▀███████▀▀"
+  style 1-17 fg=bright-magenta
+10| " "
+11| " DEEPSEEK HARNESS"
+  style 1-8 fg=bright-magenta bold
+  style 10-16 bold
+12| " Snapsho╭ Select model ────────────────────────────────────────────────────────────╮        "
+  style 1-7 dim
+  style 8-83 fg=bright-magenta
+13| " main-se│ > pro                                                                    │        "
+  style 1-7 dim
+  style 8-8 fg=bright-magenta
+  style 15-15 inverse
+  style 83-83 fg=bright-magenta
+14| "        │                                                                          │        "
+  style 8-8 fg=bright-magenta
+  style 83-83 fg=bright-magenta
+15| "Assistan│ → deepseek-official/deepseek-v4-  DeepSeek V4 Pro                        │        "
+  style 0-7 fg=bright-magenta bold underline
+  style 8-8 fg=bright-magenta
+  style 10-41 fg=bright-magenta inverse
+  style 83-83 fg=bright-magenta
+16| "Model wa│                                                                          │        "
+  style 0-7 dim
+  style 8-8 fg=bright-magenta
+  style 83-83 fg=bright-magenta
+17| "        │ type to filter • ↑/↓ move • Shift+Tab reasoning • Enter select • Esc     │        "
+  style 8-8 fg=bright-magenta
+  style 10-77 dim
+  style 83-83 fg=bright-magenta
+18| "/workspa╰──────────────────────────────────────────────────────────────────────────╯        "
+  style 0-7 fg=bright-magenta bold
+  style 8-83 fg=bright-magenta
+19| " dsh >                                                                                      "
+  style 1-3 fg=bright-magenta bold
+  style 5-6 dim
+  style 7-7 inverse
+20-31| <blank>

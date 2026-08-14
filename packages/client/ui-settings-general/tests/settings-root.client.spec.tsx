@@ -97,6 +97,24 @@ describe('SettingsRoot trigger', () => {
   })
 })
 
+describe('SettingsRoot shortcut', () => {
+  // The chord's modifier is the platform's own; jsdom reports no Apple
+  // platform, so Control is the spelling here (useShortcut owns the choice).
+  it('announces the chord on the trigger tooltip, which carries no copy of its own', () => {
+    mount()
+    fireEvent.focus(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByRole('tooltip').textContent).toBe('Ctrl+,')
+  })
+
+  it('opens the panel on the settings chord, and leaves it open on a second press', () => {
+    mount()
+    fireEvent.keyDown(document, { key: ',', ctrlKey: true })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(document, { key: ',', ctrlKey: true })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+})
+
 describe('SettingsPanel chrome seats', () => {
   it('names the dialog via aria-labelledby pointing at the header seat node', () => {
     mount()

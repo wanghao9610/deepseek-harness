@@ -2796,6 +2796,109 @@ export type ToolPresentationMode = 'native' | 'code' | 'both'
 
 Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
 
+<a id="deepseek-aidsh-tui"></a>
+
+## `@deepseek-ai/dsh-tui`
+
+Requires: `agents` · `sessions` · `commands` · `userQuestions` · `tools` · `llm` · `systemPrompt` · `tokenMeter` · `tuiPrompt`
+
+```ts config-catalog
+/** Serializable plugin configuration. */
+export interface Config extends TuiConfig {
+  /** Banner subtitle line. When absent, the banner has no subtitle and sweeps in on start. */
+  welcome?: string
+  /** Exact shared agent/session identity driven by this terminal. Defaults to `main`. */
+  sessionId?: string
+  /**
+   * Skill name auto-invoked as this session's first user turn, exactly as if
+   * the user typed `/skill:<name>`. Set only by a launcher for a fresh
+   * skill-guided session (`dsh migrate`/`dsh upgrade`); absent
+   * leaves the first turn to the user.
+   */
+  initialSkill?: string
+}
+
+/** Interaction and presentation settings for the pi-tui terminal mode. */
+export interface TuiConfig {
+  /** Render model reasoning blocks. */
+  showReasoning?: boolean
+  /** Maximum tool-card body lines retained in its collapsed head/tail preview. */
+  maxToolOutputLines?: number
+  /** Maximum added and removed lines explored while deriving an exact line diff. */
+  maxDiffEditLength?: number
+  /** Maximum options visible at once in a user-question panel. */
+  maxQuestionOptions?: number
+  /** Maximum models visible at once in the model selector. */
+  maxModelOptions?: number
+  /** Maximum sessions visible at once in the resume selector. */
+  maxResumeOptions?: number
+  /** Maximum concurrent cold projection reads in one resume scan. */
+  resumeScanConcurrency?: number
+  /** User-question panel width in terminal columns, clamped to the terminal. */
+  questionDialogWidth?: number
+  /** User-question panel maximum height in terminal rows. */
+  questionDialogMaxHeight?: number
+  /** Model-selector width in terminal columns. */
+  modelDialogWidth?: number
+  /** Model-selector maximum height in terminal rows. */
+  modelDialogMaxHeight?: number
+  /** Transcript-details selector width in terminal columns. */
+  detailsDialogWidth?: number
+  /** Maximum fuzzy file candidates displayed for one `@` query. */
+  fileSearchMaxResults?: number
+  /** Maximum paths retained in one `@` workspace index. */
+  fileSearchMaxEntries?: number
+  /** Directory basenames excluded from `@` traversal and completion. */
+  fileSearchExcludedDirectories?: string[]
+  /** Show the terminal's hardware cursor at the pi editor's IME marker. */
+  showHardwareCursor?: boolean
+  /** Color and prompt-template settings. */
+  theme?: TuiThemeConfig
+  /** Terminal window title while the UI is mounted; a logged session title prefixes it. */
+  title?: string
+}
+
+/** Theme and prompt-template settings for the pi-tui terminal mode. */
+export interface TuiThemeConfig {
+  /** Apply the built-in ANSI color palette. */
+  color?: boolean
+  /** Paint the startup banner with the 24-bit DeepSeek brand gradient. */
+  truecolor?: boolean
+  /** Left-aligned template on the row above the editor. */
+  leftPrompt?: string
+  /** Right-aligned template on the row above the editor. */
+  rightPrompt?: string
+  /** Template used as the editor's first-line prefix. */
+  inputPrompt?: string
+  /** Static placeholder shown in an empty editor while the agent is running. */
+  inputPlaceholder?: string
+}
+```
+
+Source: [`packages/tui/tui/src/config.ts:129`](../packages/tui/tui/src/config.ts)
+
+<a id="deepseek-aidsh-tui-app"></a>
+
+## `@deepseek-ai/dsh-tui-app`
+
+```ts config-catalog
+/** Plugin config: the composed deployment settings for this terminal surface. */
+export interface Config {
+  /** Line printed once the terminal is released on exit; the command that returns to this session. */
+  goodbye: string
+  /** Absolute path of this process's disposable `/resume` search index, removed on disposal. */
+  queryIndexPath: string
+  /**
+   * Register the model-visible surface context (the harness-source and
+   * terminal-surface prompt sections). A composition whose user is not at this
+   * terminal turns it off so the orientation text cannot be false.
+   */
+  surfaceContext: boolean
+}
+```
+
+Source: [`packages/bundle/tui-app/src/index.ts:32`](../packages/bundle/tui-app/src/index.ts)
+
 <a id="deepseek-aidsh-typert-loader"></a>
 
 ## `@deepseek-ai/dsh-typert-loader`
@@ -2887,7 +2990,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/bundle/web-app/src/index.ts:38`](../packages/bundle/web-app/src/index.ts)
+Source: [`packages/bundle/web-app/src/index.ts:34`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 
@@ -3144,6 +3247,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-sdk-protocol` ([`packages/sdk/protocol/src/index.ts`](../packages/sdk/protocol/src/index.ts))
 - `@deepseek-ai/dsh-session-telemetry` ([`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts))
 - `@deepseek-ai/dsh-session-title-llm` ([`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts))
+- `@deepseek-ai/dsh-ssh-launch` ([`packages/boot/ssh-launch/src/index.ts`](../packages/boot/ssh-launch/src/index.ts))
 - `@deepseek-ai/dsh-subagent-in-process-driver` ([`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts))
 - `@deepseek-ai/dsh-timeout` ([`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts))
 - `@deepseek-ai/dsh-typert-generator` ([`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts))

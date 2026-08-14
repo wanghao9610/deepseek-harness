@@ -7,7 +7,7 @@ import { defineConfig } from 'tsdown'
  *
  * Unlike the CLI, this bundle inlines its workspace imports (`noExternal`):
  * the packaged application ships `lib/` inside the Electron app directory
- * while the harness closure lives under `Contents/Resources`, so a bare
+ * while the harness closure lives under `resources`, so a bare
  * workspace specifier left in the output would have no `node_modules` to
  * resolve against at runtime.
  */

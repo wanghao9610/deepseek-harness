@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "DSH desktop application: an Electron shell that supervises an embedded dsh web runtime and adds the macOS surface around it",
+  "description": "DSH desktop application: an Electron shell that supervises an embedded dsh web runtime and adds the native surface around it",
   "version": "0.1.0-rc.5",
   "private": true,
   "type": "module",
@@ -13,6 +13,7 @@
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
+    "@deepseek-ai/dsh-ssh-launch": "workspace:^",
     "@types/node": "^22.0.0",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",

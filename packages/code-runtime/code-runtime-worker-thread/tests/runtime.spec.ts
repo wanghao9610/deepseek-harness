@@ -130,6 +130,32 @@ describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () 
     const result = await runtime.run({ program: 'enum E { A }\nreturn 1', bindings: [] })
     expect(result.error?.kind).toBe('exception')
     expect(result.error?.message).toMatch(/enum|strip/i)
+    expect(result.error?.message.split('\n').at(-1)).toBe('    at program:1:1')
+  })
+
+  it('locates a syntax error on the model\'s own line, naming no wrapper', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        '// Read a window of the file.',
+        'const read = await tools.read({ file_path: "mount.ts", { offset: 240, limit: 90 });',
+        'return read.lines.length;',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toEqual({
+      kind: 'exception',
+      message: 'SyntaxError: Unexpected token `{`. Expected identifier, string literal, numeric literal or [ for the computed key'
+        + '\n    at program:2:56',
+    })
+  })
+
+  it('states an unterminated program without a location past its last line', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({ program: 'const x = (', bindings: [] })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message.split('\n')).toHaveLength(1)
+    expect(result.error?.message).toMatch(/^SyntaxError: /)
   })
 
   it('reports a runtime throw as an exception with the message', async () => {
@@ -137,6 +163,26 @@ describe('WorkerThreadCodeRuntime — programs and bindings (real workers)', () 
     const result = await runtime.run({ program: 'throw new Error("kaboom")', bindings: [] })
     expect(result.error?.kind).toBe('exception')
     expect(result.error?.message).toContain('kaboom')
+  })
+
+  it('locates a real worker failure in the program and names no host path', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'const rows = await tools.list({});',
+        'function first() { return rows.missing.head; }',
+        'return first();',
+      ].join('\n'),
+      bindings: tools({ list: async () => [] }),
+    })
+    expect(result.error).toEqual({
+      kind: 'exception',
+      message: [
+        "TypeError: Cannot read properties of undefined (reading 'head')",
+        '    at first (program:2:40)',
+        '    at program:3:8',
+      ].join('\n'),
+    })
   })
 
   it('gives the program an EMPTY environment', async () => {

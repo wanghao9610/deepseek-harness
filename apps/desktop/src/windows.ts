@@ -9,21 +9,50 @@
  */
 
 import { BrowserWindow, screen, shell } from 'electron'
+import type { SshTarget } from '@deepseek-ai/dsh-ssh-launch'
+import { ACTION_SCHEME, parseBootAction, type BootAction } from './boot-action.ts'
 import type { RuntimeState } from './runtime-supervisor.ts'
+import { surfaceFor } from './surface.ts'
 import type { SettingsStore } from './store.ts'
 import { MIN_HEIGHT, MIN_WIDTH, type Rect } from './window-state.ts'
+import { resolveWindowKey } from './window-keys.ts'
 
-/** What the boot surface can ask the shell to do. */
-export type BootAction = 'retry' | 'open-log' | 'quit'
+/**
+ * Which connection a window serves from: a stored connection's identifier, or
+ * the empty string for this machine.
+ *
+ * A window carries one, so two windows can serve from different hosts at once
+ * and neither is disturbed by what the other does.
+ */
+export type ConnectionKey = string
 
-/** Scheme the boot surface uses for its buttons; navigation to it never happens. */
-const ACTION_SCHEME = 'dsh-action:'
+/** The connection every window starts on: the runtime beside the window. */
+export const THIS_MACHINE: ConnectionKey = ''
+
+/** The connection list as the boot surface renders it. */
+export interface ConnectionsView {
+  /** Every stored connection, in display order. */
+  targets: readonly SshTarget[]
+  /** The chosen connection, or `undefined` for this machine. */
+  activeId: string | undefined
+  /** Problems from the last rejected edit, keyed by field. */
+  problems: Readonly<Record<string, string>>
+  /** The rejected edit itself, so the surface can show the values it is about. */
+  draft?: Partial<SshTarget>
+}
 
 /** Window background, matched to the boot surface so a cold start shows no white flash. */
 const BACKGROUND_COLOR = '#101014'
 
 /** Delay between a geometry change and writing it, so a drag writes once. */
 const GEOMETRY_WRITE_DELAY_MS = 500
+
+/**
+ * Address parameter that asks the harness UI to start the window on a session
+ * of its own rather than the one this browser profile last selected. The web
+ * client owns the parameter and spends it on the first load.
+ */
+const NEW_SESSION_PARAM = 'new'
 
 /** What the window host needs from the application. */
 export interface WindowHostOptions {
@@ -35,16 +64,36 @@ export interface WindowHostOptions {
    * Handle a boot-surface button.
    * @param action - the requested action.
    */
-  onAction: (action: BootAction) => void
+  onAction: (action: BootAction, window: BrowserWindow) => void
   /** Called whenever the number of open windows changes. */
   onWindowCountChange: () => void
+}
+
+/**
+ * The runtime address that asks the harness UI for a session of this window's
+ * own.
+ * @param url - the runtime origin.
+ * @returns the address to load.
+ */
+function withNewSession(url: string): string {
+  const target = new URL(url)
+  target.searchParams.set(NEW_SESSION_PARAM, '1')
+  return target.href
 }
 
 /** Owns every window and keeps each one pointed at the right surface. */
 export class WindowHost {
   private readonly windows = new Set<BrowserWindow>()
   private readonly routed = new WeakMap<BrowserWindow, string>()
-  private state: RuntimeState = { status: 'stopped' }
+  /** Windows still owed their own session; membership is spent on the first load of the harness UI. */
+  private readonly owedFreshSession = new WeakSet<BrowserWindow>()
+  /** Which connection each window serves from; absence means this machine. */
+  private readonly windowConnections = new WeakMap<BrowserWindow, ConnectionKey>()
+  /** Windows showing the connection list, which is a surface over one window. */
+  private readonly managingWindows = new Set<BrowserWindow>()
+  /** The condition of each connection's runtime, as its supervisor last reported. */
+  private readonly states = new Map<ConnectionKey, RuntimeState>()
+  private connections: ConnectionsView = { targets: [], activeId: undefined, problems: {} }
   private geometryTimer: ReturnType<typeof setTimeout> | undefined
 
   /** @param options - boot surface, settings store, and shell callbacks. */
@@ -68,8 +117,11 @@ export class WindowHost {
     return screen.getAllDisplays().map(display => display.workArea)
   }
 
-  /** Open one window, restoring the stored geometry. */
-  open(): void {
+  /**
+   * Open one window, restoring the stored geometry.
+   * @param options - `freshSession` starts the window on a session of its own instead of the last selected one.
+   */
+  open(options: { freshSession?: boolean; connection?: ConnectionKey } = {}): void {
     const geometry = this.options.settings.readGeometry(this.displays)
     const window = new BrowserWindow({
       width: geometry.width,
@@ -91,15 +143,28 @@ export class WindowHost {
       },
     })
     this.windows.add(window)
+    if (options.freshSession === true) this.owedFreshSession.add(window)
     this.attach(window)
     this.route(window)
     window.once('ready-to-show', () => { window.show() })
     this.options.onWindowCountChange()
   }
 
-  /** Open a window when none is open, which is what a Dock activation asks for. */
-  ensureOpen(): void {
-    if (this.windows.size === 0) this.open()
+  /**
+   * Open a window when none is open, which is what a Dock activation asks for.
+   * @param options - the connection the opened window serves from.
+   */
+  ensureOpen(options: { connection?: ConnectionKey } = {}): void {
+    if (this.windows.size === 0) this.open(options)
+  }
+
+  /**
+   * The window a menu command acts on: the focused one, else any open one.
+   * @returns that window, or `undefined` when none is open.
+   */
+  current(): BrowserWindow | undefined {
+    const focused = BrowserWindow.getFocusedWindow()
+    return focused !== null && this.windows.has(focused) ? focused : [...this.windows][0]
   }
 
   /**
@@ -118,12 +183,74 @@ export class WindowHost {
   }
 
   /**
-   * Point every window at the surface this runtime condition calls for.
-   * @param state - the runtime's current condition.
+   * Point the windows serving from one connection at the surface its condition
+   * calls for. A window on another connection is not disturbed: its runtime is
+   * still serving, and what happens to this one is not its business.
+   * @param connection - the connection whose condition changed.
+   * @param state - that runtime's current condition.
    */
-  applyRuntimeState(state: RuntimeState): void {
-    this.state = state
-    for (const window of this.windows) this.route(window)
+  applyRuntimeState(connection: ConnectionKey, state: RuntimeState): void {
+    this.states.set(connection, state)
+    for (const window of this.windows) {
+      if (this.connectionOf(window) === connection) this.route(window)
+    }
+  }
+
+  /**
+   * Which connection one window serves from.
+   * @param window - the window to read.
+   * @returns its connection, defaulting to this machine.
+   */
+  connectionOf(window: BrowserWindow): ConnectionKey {
+    return this.windowConnections.get(window) ?? THIS_MACHINE
+  }
+
+  /**
+   * Move one window to another connection, leaving every other window where it is.
+   * @param window - the window to move.
+   * @param connection - the connection it serves from now.
+   */
+  bind(window: BrowserWindow, connection: ConnectionKey): void {
+    this.windowConnections.set(window, connection)
+    this.route(window)
+  }
+
+  /**
+   * How many windows serve from one connection, which is what decides whether
+   * its runtime is idle.
+   * @param connection - the connection to count.
+   * @returns the number of windows on it.
+   */
+  countOn(connection: ConnectionKey): number {
+    let count = 0
+    for (const window of this.windows) {
+      if (this.connectionOf(window) === connection) count += 1
+    }
+    return count
+  }
+
+  /**
+   * Replace the connection list the surface renders.
+   * @param connections - the stored connections, the chosen one, and any rejected edit.
+   */
+  applyConnections(connections: ConnectionsView): void {
+    this.connections = connections
+    for (const window of this.managingWindows) this.route(window)
+  }
+
+  /**
+   * Show or leave the connection list.
+   *
+   * It is a surface over one window rather than a state of the runtime: a
+   * person changes where that window serves from while the current runtime —
+   * and every other window — keeps going.
+   * @param window - the window showing or leaving the list.
+   * @param managing - whether the list is shown.
+   */
+  manageConnections(window: BrowserWindow, managing: boolean): void {
+    if (managing) this.managingWindows.add(window)
+    else this.managingWindows.delete(window)
+    this.route(window)
   }
 
   /** Persist the geometry of the frontmost window before the application exits. */
@@ -155,6 +282,27 @@ export class WindowHost {
     })
     window.on('close', () => { this.writeGeometry(window) })
 
+    window.webContents.on('before-input-event', (event, input) => {
+      const action = resolveWindowKey(input)
+      if (action === undefined) return
+      // These keys belong to the platform rather than to the page, so the
+      // harness UI does not also act on one.
+      event.preventDefault()
+      switch (action) {
+        case 'reload':
+          window.webContents.reload()
+          return
+        case 'force-reload':
+          window.webContents.reloadIgnoringCache()
+          return
+        case 'toggle-dev-tools':
+          window.webContents.toggleDevTools()
+          return
+        default:
+          action satisfies never
+      }
+    })
+
     window.webContents.setWindowOpenHandler(({ url }) => {
       // Everything the harness UI opens in a new context is an external
       // destination; the shell has one window kind and it is this one.
@@ -164,10 +312,11 @@ export class WindowHost {
     window.webContents.on('will-navigate', (event, url) => {
       if (url.startsWith(ACTION_SCHEME)) {
         event.preventDefault()
-        this.dispatchAction(url.slice(ACTION_SCHEME.length))
+        const action = parseBootAction(url)
+        if (action !== undefined) this.options.onAction(action, window)
         return
       }
-      if (this.isOwnSurface(url)) return
+      if (this.isOwnSurface(window, url)) return
       event.preventDefault()
       this.openExternal(url)
     })
@@ -181,13 +330,15 @@ export class WindowHost {
 
   /**
    * Whether a navigation target is a surface this shell serves.
+   * @param window - the window navigating.
    * @param url - the navigation target.
    * @returns true for the boot file and the running runtime's origin.
    */
-  private isOwnSurface(url: string): boolean {
+  private isOwnSurface(window: BrowserWindow, url: string): boolean {
     if (url.startsWith('file://')) return true
-    if (this.state.status !== 'ready') return false
-    return url.startsWith(this.state.url)
+    const state = this.states.get(this.connectionOf(window))
+    if (state?.status !== 'ready') return false
+    return url.startsWith(state.url)
   }
 
   /**
@@ -200,32 +351,45 @@ export class WindowHost {
   }
 
   /**
-   * Route one boot-surface action to the application.
-   * @param raw - the action name from the intercepted URL.
-   */
-  private dispatchAction(raw: string): void {
-    if (raw === 'retry' || raw === 'open-log' || raw === 'quit') this.options.onAction(raw)
-  }
-
-  /**
-   * Load the surface the current runtime condition calls for, skipping a load
-   * the window is already showing.
+   * Load the surface the current condition calls for, skipping a load the
+   * window is already showing.
    * @param window - the window to route.
    */
   private route(window: BrowserWindow): void {
-    if (this.state.status === 'ready') {
-      const key = `app:${this.state.url}`
-      if (this.routed.get(window) === key) return
-      this.routed.set(window, key)
-      void window.loadURL(this.state.url)
+    const surface = surfaceFor(this.states.get(this.connectionOf(window)), this.managingWindows.has(window))
+    if (surface.kind === 'boot') {
+      this.routeBootPage(window, surface.state, surface.note)
       return
     }
-    const reason = this.state.status === 'failed' ? this.state.reason : ''
-    const key = `boot:${this.state.status}:${reason}`
+    const key = `app:${surface.url}`
+    if (this.routed.get(window) === key) return
+    this.routed.set(window, key)
+    // Spent on the first load of the harness UI rather than on every route:
+    // a runtime restart re-routes the windows that are already open, and
+    // each of those is the same window, not another new one.
+    const fresh = this.owedFreshSession.delete(window)
+    void window.loadURL(fresh ? withNewSession(surface.url) : surface.url)
+  }
+
+
+  /**
+   * Load the local boot surface with everything it renders.
+   * @param window - the window to route.
+   * @param state - the surface the page shows.
+   * @param note - what else the shell knows about this state: why a start failed, or what a slow one is doing.
+   */
+  private routeBootPage(window: BrowserWindow, state: string, note: string): void {
+    const connections = JSON.stringify({
+      targets: this.connections.targets,
+      activeId: this.connections.activeId ?? null,
+      problems: this.connections.problems,
+      draft: this.connections.draft ?? null,
+    })
+    const key = `boot:${state}:${note}:${connections}`
     if (this.routed.get(window) === key) return
     this.routed.set(window, key)
     void window.loadFile(this.options.bootPage, {
-      query: { state: this.state.status, ...reason !== '' && { reason } },
+      query: { state, connections, ...note !== '' && { note } },
     })
   }
 

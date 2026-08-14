@@ -9,20 +9,25 @@ import {
 
 describe('needsLoginEnvironment', () => {
   it('asks for a probe when PATH holds only launchd system entries', () => {
-    expect(needsLoginEnvironment({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin' })).toBe(true)
+    expect(needsLoginEnvironment({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }, 'darwin')).toBe(true)
   })
 
   it('asks for a probe when PATH is absent or empty', () => {
-    expect(needsLoginEnvironment({})).toBe(true)
-    expect(needsLoginEnvironment({ PATH: '' })).toBe(true)
+    expect(needsLoginEnvironment({}, 'darwin')).toBe(true)
+    expect(needsLoginEnvironment({ PATH: '' }, 'darwin')).toBe(true)
   })
 
   it('skips the probe once PATH carries a profile entry', () => {
-    expect(needsLoginEnvironment({ PATH: '/opt/homebrew/bin:/usr/bin:/bin' })).toBe(false)
+    expect(needsLoginEnvironment({ PATH: '/opt/homebrew/bin:/usr/bin:/bin' }, 'darwin')).toBe(false)
+  })
+
+  it('never probes off macOS, where a GUI launch already carries the user PATH', () => {
+    expect(needsLoginEnvironment({ PATH: '' }, 'win32')).toBe(false)
+    expect(needsLoginEnvironment({}, 'linux')).toBe(false)
   })
 
   it('ignores empty PATH segments', () => {
-    expect(needsLoginEnvironment({ PATH: '/usr/bin::/bin' })).toBe(true)
+    expect(needsLoginEnvironment({ PATH: '/usr/bin::/bin' }, 'darwin')).toBe(true)
   })
 })
 

@@ -2,7 +2,7 @@
 
 [English](rescope.md) | 中文
 
-Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/README.md) 下，并以 `@deepseek-ai` scope 发布：每个 harness 包都把框架声明为 peer dependency，发布 harness 就会连带发布这一层，用上游名发布等于在 registry 上占用别人的名字。本页是名字映射表；决策与影响见 [改名 Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md)，上游 commit 见 [`vendor/README.md`](../vendor/README.md)。
+Cordis 框架、其基础库，以及 TUI 使用的终端 UI 库，都以源码形式 vendored 在 [`vendor/`](../vendor/README.md) 下，并以 `@deepseek-ai` scope 发布：harness 包依赖它们，发布 harness 就会连带发布这一层，用上游名发布等于在 registry 上占用别人的名字。本页是名字映射表；决策与影响见 [改名 Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md)，上游 commit 见 [`vendor/README.md`](../vendor/README.md)。
 
 ## 名字映射
 
@@ -17,6 +17,7 @@ Cordis 框架及其基础库以源码形式 vendored 在 [`vendor/`](../vendor/R
 | `vendor/timer/` | `@cordisjs/plugin-timer` | `@deepseek-ai/cordis-plugin-timer` | 1.1.2 | `ctx` 上随 disposal 回收的定时器 |
 | `vendor/hmr/` | `@cordisjs/plugin-hmr` | `@deepseek-ai/cordis-plugin-hmr` | 1.0.15 | 插件与配置的热替换 |
 | `vendor/logger-console/` | `@cordisjs/plugin-logger-console` | `@deepseek-ai/cordis-plugin-logger-console` | 1.0.0 | 控制台日志导出 |
+| `vendor/tui/` | `@earendil-works/pi-tui` | `@deepseek-ai/tui` | 0.80.7 | `@deepseek-ai/dsh-tui` 背后的终端差分渲染 |
 
 子路径导出保持原路径：`@cordisjs/plugin-loader/repository` 变成 `@deepseek-ai/cordis-plugin-loader/repository`。
 

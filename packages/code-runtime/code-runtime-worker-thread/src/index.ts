@@ -18,6 +18,7 @@ import type { CodeBindingNamespace, CodeJsonValue, CodeRunFailure, CodeRunReques
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { ReplyMessage, WorkerBootData, WorkerToHost } from './protocol.ts'
 import { jsonStringBytesUpTo, jsonValueBytesUpTo, truncateJsonStringBytes } from './output-json.ts'
+import { programSyntaxLocation } from './program-location.ts'
 import { decodeWorkerJson, encodeWorkerJson } from './worker-json.ts'
 import type { WorkerJsonWire } from './worker-json.ts'
 
@@ -83,6 +84,9 @@ const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
  */
 const STRIP_WRAP = { prefix: 'async function __dsh_program__() {\n', suffix: '\n}' } as const
 
+/** Wrapper lines ahead of the program's line 1, derived so a reworded wrapper cannot shift a reported location. */
+const STRIP_PREFIX_LINES = STRIP_WRAP.prefix.split('\n').length - 1
+
 /** One in-flight run's host-side state, tracked for disposal. */
 interface LiveRun {
   worker: Worker
@@ -108,6 +112,24 @@ const WORKER_PATH = fileURLToPath(new URL(new URL(import.meta.url).pathname.ends
 /** Render an unknown thrown value as a message, `Error` or not. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Restate a type-strip rejection as the model's own failure: the named
+ * diagnostic plus, when the stripper located it inside the program, a frame in
+ * the program's coordinates. The stripper reports the wrapped source it parsed
+ * — {@link STRIP_WRAP}'s lines included — and its stack embeds the wrapper's
+ * text, neither of which the model wrote.
+ * @param error - the value `stripTypeScriptTypes` threw.
+ * @param program - the model's program, whose lines bound a reported location.
+ * @returns the failure message for `kind: 'exception'`.
+ */
+function stripFailureMessage(error: unknown, program: string): string {
+  /* v8 ignore next -- stripTypeScriptTypes rejects with a stacked SyntaxError; the guard keeps any other throw renderable. */
+  if (!(error instanceof Error) || error.stack === undefined) return messageOf(error)
+  const message = `${error.name}: ${error.message}`
+  const location = programSyntaxLocation(error.stack, STRIP_PREFIX_LINES, program.split('\n').length)
+  return location === undefined ? message : `${message}\n    at ${location}`
 }
 
 /** Resolve after a worker pipe emits all queued data, or closes/errors during termination. */
@@ -305,7 +327,7 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
       // A program that does not survive the type-strip (syntax error,
       // non-erasable syntax like `enum`) is a program failure, reported the
       // same way a thrown exception would be — and no worker ever spawns.
-      return this.failureBeforeWorker({ kind: 'exception', message: messageOf(error) })
+      return this.failureBeforeWorker({ kind: 'exception', message: stripFailureMessage(error, request.program) })
     }
 
     return await this.execute(request, code, bindings)

@@ -59,8 +59,10 @@ export function startFrameStream<F>(options: FrameStreamOptions<F>): () => void 
           options.onFrame(request)
         }
       } catch (error) {
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the disposer can stop this while the stream is awaited.
         if (!stopped) options.onLog?.(`desktop: event stream ended: ${error instanceof Error ? error.message : String(error)}`)
       }
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the disposer can stop the subscription while the stream is awaited.
       if (stopped) return
       await wait()
     }

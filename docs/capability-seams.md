@@ -91,6 +91,11 @@ flowchart LR
   svc_agentPresets["ctx.agentPresets<br/>Per-session agent composition"]
   pkg_commands["commands"]
   svc_commands["ctx.commands<br/>Human command registry"]
+  pkg_tui["tui"]
+  svc_tui["ctx.tui<br/>Terminal overlay surface"]
+  svc_tuiPrompt["ctx.tuiPrompt<br/>Terminal prompt values"]
+  svc_tuiResumeHost["ctx.tuiResumeHost<br/>Terminal resume handoff"]
+  pkg_tui_app["tui-app"]
   pkg_session_projection["session-projection"]
   svc_sessionProjections["ctx.sessionProjections<br/>Session projection units"]
   pkg_host_apiproxy["host-apiproxy"]
@@ -283,6 +288,9 @@ flowchart LR
   pkg_terminal_bash --> svc_terminals
   pkg_token_meter --> svc_tokenMeter
   pkg_tools --> svc_tools
+  pkg_tui --> svc_tui
+  pkg_tui --> svc_tuiPrompt
+  pkg_tui --> svc_tuiResumeHost
   pkg_typert_registry --> svc_typert
   pkg_user_questions --> svc_userQuestions
   pkg_web --> svc_web
@@ -396,6 +404,7 @@ flowchart LR
   svc_tools --> pkg_tool_terminal
   svc_tools --> pkg_tool_todo
   svc_tools --> pkg_tool_web
+  svc_tuiResumeHost --> pkg_tui_app
   svc_typert --> pkg_api_gateway
   svc_typert --> pkg_typert_loader
   svc_userQuestions --> pkg_tool_ask_user
@@ -436,6 +445,9 @@ flowchart LR
 | `ctx.planMode` | `core` | [`plan-mode`](../packages/plan/plan-mode) | - | - | - | Folds logged plan/mode state, flushes user selections at turn boundaries, renders deployment-owned guidance, registers /plan, and keeps the plan-exit schema stable across transitions. |
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm. |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | Plugins register direct human commands without sending invocations to the model. |
+| `ctx.tui` | `core` | [`tui`](../packages/tui/tui) | - | - | - | A mounted terminal front door lets other plugins queue keyboard overlays into its modal queue without reaching pi-tui, the terminal, or focus. |
+| `ctx.tuiPrompt` | `core` | [`tui`](../packages/tui/tui) | - | - | - | Plugins register named fragments the terminal status rows interpolate, and set them as their own state changes. |
+| `ctx.tuiResumeHost` | `core` | [`tui`](../packages/tui/tui) | - | [`tui-app`](../packages/bundle/tui-app) | - | The owning process, not a plugin, replaces itself with the selected session so a resumed session runs in its own workspace directory. |
 | `ctx.sessionProjections` | `core` | [`session-projection`](../packages/session/session-projection) | - | [`tool-todo`](../packages/todo/tool-todo), [`session-title`](../packages/session/session-title), [`host-apiproxy`](../packages/host/apiproxy) | - | Domains register state-driven fold units; the eager drive keeps per-session watermark states and api-proxy serves baselines and pushes changed values. |
 | `ctx.sessionProjectionCache` | `core` | [`session-projection-cache`](../packages/session/session-projection-cache) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs. |
 | `ctx.skills` | `seam` | [`skill`](../packages/skill/skill) | [`skill-badge`](../packages/skill/skill-badge), [`skill-filesystem`](../packages/skill/skill-filesystem) | [`tool-skill`](../packages/skill/tool-skill) | - | Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies. |

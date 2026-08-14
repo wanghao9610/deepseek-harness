@@ -30,6 +30,7 @@ import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
+import { DEFAULT_WINDOW_BOOT, type WindowBoot } from '../window-boot.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
@@ -274,16 +275,21 @@ export class SessionRuntime implements ISessions {
    * @param api - wire client shared with every Session.
    * @param remote - generated Remote namespaces shared with every Session.
    * @param conversationRuntime - same-pass registry instances, when runtime apply owns them.
+   * @param boot - what this window was opened for; a new window drops the restored selection.
    */
   constructor(
     private readonly rootCtx: Context,
     api: IApiClient,
     remote: SessionRemotes,
     conversationRuntime?: ConversationRuntime,
+    boot: WindowBoot = DEFAULT_WINDOW_BOOT,
   ) {
+    // Window scope is what keeps two windows apart: each one selects for
+    // itself, while the shared cell stays the seed a cold start restores from.
     this.selection = createSnapshotStore<SessionSelection>(
       {},
-      { persist: { name: 'dsh.sessions.current' } })
+      { persist: { name: 'dsh.sessions.current', scope: 'window' } })
+    if (boot.freshSession) this.selection.set({})
     const restored = this.selection.getSnapshot()
     const conversationEvents = rootCtx.get('conversationEvents')
     const conversationViews = rootCtx.get('conversationViews')

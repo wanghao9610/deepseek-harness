@@ -14,7 +14,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
-  IconPersonalizationOutline16, IconSettingsOutline16,
+  IconPersonalizationOutline16, IconSettingsOutline16, shortcutLabel, Tooltip, useShortcut,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
@@ -115,6 +115,10 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     setOpen(true)
   }, [])
 
+  // The platform's settings chord, on the panel's own open state: pressing it
+  // while the panel is up leaves it up, on whichever section is showing.
+  useShortcut(',', () => { setOpen(true) })
+
   // The ledger tick keeps the nav rows fresh: registrants re-register with
   // freshly localized text on locale change, and the trigger/header/close
   // seats re-render through their own outlets' subscriptions.
@@ -141,15 +145,19 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
 
   return (
     <>
-      <button
-        type="button"
-        className={clsx(css.trigger, !wide && css.rail)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => { setOpen(true) }}
-      >
-        {renderSlot('settings.trigger', { wide })}
-      </button>
+      {/* The chord alone: the shell holds no copy of its own, and every word
+          on this row — the trigger's included — is a registrant's. */}
+      <Tooltip label={shortcutLabel(',')} delayMs={500}>
+        <button
+          type="button"
+          className={clsx(css.trigger, !wide && css.rail)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => { setOpen(true) }}
+        >
+          {renderSlot('settings.trigger', { wide })}
+        </button>
+      </Tooltip>
       {open && (
         <SettingsPanel
           rows={rows}

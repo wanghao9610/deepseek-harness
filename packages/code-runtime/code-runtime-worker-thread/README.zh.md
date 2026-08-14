@@ -22,6 +22,7 @@
 
 - **每次运行使用一个全新 worker，不设池化**：程序所在的世界会随 worker 一同终止，不会留下需要记录的跨运行状态，也无法发生状态泄漏；仅凭会话日志即可重建运行。
 - **在执行上下文中，由宿主侧剥离类型**：程序会包裹在异步函数外壳中，通过 `node:module` 的 `stripTypeScriptTypes` 剥离类型（只支持可擦除语法；`enum`／namespace 会作为程序 `exception` 被拒绝，且不会启动 worker），再按字节位置切回原内容。之后程序作为 `AsyncFunction` 的函数体执行，因此顶层 `await`／`return` 可用。
+- **失败的程序在自己的坐标系中定位**：`exception` 诊断保留抛出的消息，并把 V8 归属给该程序的每个栈帧改写为 `program:<行>:<列>`，行号从模型写下的第一行算起——合成函数头部占用的行数由测量得出，而非假定；属于本文件、Node 内部以及它们所指绝对宿主路径的栈帧会被丢弃。解析被拒绝时同样定位：取剥离器自己的行标记与插入符号所在列，减去剥离包裹占的那一行；若解析停在模型所写内容之外——例如未闭合的程序会停在包裹追加的那个花括号上——则完全不给出位置，而不是报出一个并不存在的行。
 - **端口把对端视为不可信**：模型代码能够访问 `parentPort` 并伪造通信，因此任何代码读取入站消息前，系统都会验证其形状并重新构建（`null`、原始值、无效类型和格式错误的载荷会被静默丢弃；伪造的额外字段绝不会被带入）；宿主对每个调用 id 最多响应一次，只将绑定名称解析为自有属性（伪造的 `constructor` 无法沿原型链访问），丢弃结算后的回复，并验证每个绑定 resolve 值与完成值是否为无损 JSON。伪造的 `log`／`done` 消息无法绕过外层上限：宿主会再次验证，并统计每条获准日志以及完成值或诊断。worker 侧命名空间使用 null-prototype 和 `defineProperty`，因此形似 `__proto__` 的绑定名称只是普通键。
 - **绑定调用被拒绝时使用的异常类属于请求数据**：可选命名空间描述符会指定构造器全局变量，以及用于接收调用失败的成员名称的自有属性。worker 会创建并注入该真实类，使 `instanceof` 生效，同时无需硬编码 `tools` 或 `ToolCallError`；全局变量无效或冲突的声明会在启动 worker 前失败。失败路径使用模块捕获的错误 intrinsic 与属性定义 intrinsic，以及 null-prototype 描述符，因此模型之后的修改无法把被拒绝的绑定变成 worker 崩溃。
 - **两个独立预算，因为对端不可信**：`computeMs` 统计 worker 实际测得的忙碌时间（轮询 `worker.performance.eventLoopUtilization()`）；热循环无法借助待完成的诱饵 dispatch 隐藏，程序等待慢工具时则不累计。`maxWallMs` 为忙碌时间无法观测的情况兜底（例如等待永远不会 resolve 的 promise）。二者最终都会调用 `worker.terminate()`，连同步热循环也能终止；堆溢出会表现为 worker 的 OOM 退出（`kind: 'worker-exit'`）。`maxWallMs` 在加载时会对照 `MAX_TIMER_DELAY_MS` 做范围校验：`setTimeout` 会把更长的延迟限制为 1 ms，仅有正数校验会放行一个在第一个 tick 就到期的上限。`computeMs` 不需要这道上界，因为它对照的是实测占用率，而不是喂给定时器。
@@ -38,7 +39,7 @@ SDK 对外提供默认及具名导出的 `WorkerThreadCodeRuntime` 类，以及 
 
 ## 模型体验
 
-通过 [`dsh-tools`](../../core/tools/README.md) 中的 Code Mode 间接提供；如果外层值能容纳则原样渲染，否则返回明确的 `invalid-output`／`output-limit` 失败。只有外层 `run_code` 结果进入模型上下文并使用普通落盘策略；绑定通信与中间值始终只存在于执行环境中。
+通过 [`dsh-tools`](../../core/tools/README.md) 中的 Code Mode 间接提供；如果外层值能容纳则原样渲染，否则返回明确的 `invalid-output`／`output-limit` 失败。抛出的程序错误或被拒绝的解析，都以自身消息加一个 `program:<行>:<列>` 栈帧的形式到达模型，因此重试会针对模型自己写下的那一行。只有外层 `run_code` 结果进入模型上下文并使用普通落盘策略；绑定通信与中间值始终只存在于执行环境中。
 
 #### KV Cache 影响
 

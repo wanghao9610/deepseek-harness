@@ -1,0 +1,50 @@
+terminal 96x24 buffer=normal length=24 base=0 viewport=0
+lifecycle started=1 stopped=0 progress=inactive
+title "DSH session reference"
+cursor hidden column=7 viewportRow=22 bufferRow=22
+buffer
+0| "    ▄▄▄▄▄▄   ▄▄"
+  style 1-14 fg=bright-magenta
+1| "  ▄████████▄ ▀████▀"
+  style 1-18 fg=bright-magenta
+2| " █▀▀▀▀███████▄██▀"
+  style 1-16 fg=bright-magenta
+3| " █▄    ▀███ ▀███"
+  style 1-15 fg=bright-magenta
+4| " ▀█▄     ▀█████"
+  style 1-14 fg=bright-magenta
+5| "  ▀█▄▄ █▄▄▀███▄"
+  style 1-14 fg=bright-magenta
+6| "     ▀▀▀▀▀▀"
+  style 1-10 fg=bright-magenta
+7| " "
+8| " DEEPSEEK HARNESS"
+  style 1-8 fg=bright-magenta bold
+  style 10-16 bold
+9| " Session reference snapshot."
+  style 1-27 dim
+10| " target-session"
+  style 1-14 dim
+11| <blank>
+12| "Assistant                                                                                       "
+  style 0-8 fg=bright-magenta bold underline
+13| "Combined reference request accepted.                                                            "
+14| "Model wait 0.0s · Completed 2026-07-21 12:30:00                                                 "
+  style 0-46 dim
+15| <blank>
+16| "You                                                                                             "
+  style 0-2 fg=bright-magenta bold underline
+17| "Use @Source session                                                                             "
+18| <blank>
+19| "Referenced sessions · Source session (source-session)                                           "
+  style 0-52 dim
+20| <blank>
+21| "/workspace/project  mock  ↑0 ↓0"
+  style 0-17 fg=bright-magenta bold
+  style 20-23 dim
+  style 26-30 dim
+22| " dsh ◍                                                                                          "
+  style 1-3 fg=bright-magenta bold
+  style 5-6 dim
+  style 7-7 inverse
+23| <blank>

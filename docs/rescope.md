@@ -2,7 +2,7 @@
 
 English | [中文](rescope.zh.md)
 
-The Cordis framework and its foundation libraries are vendored under [`vendor/`](../vendor/README.md) and published under the `@deepseek-ai` scope, because every harness package declares the framework as a peer dependency: publishing the harness publishes this layer with it, and under the upstream names that publication would squat them on the registry. This page is the name mapping; the decision and its consequences live in the [rescope Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md), and the upstream commits in [`vendor/README.md`](../vendor/README.md).
+The Cordis framework, its foundation libraries, and the TUI's terminal UI library are vendored under [`vendor/`](../vendor/README.md) and published under the `@deepseek-ai` scope, because harness packages depend on them: publishing the harness publishes this layer with it, and under the upstream names that publication would squat them on the registry. This page is the name mapping; the decision and its consequences live in the [rescope Agent Note](../.agents/notes/implemented/process/2026-08-10-vendor-package-rescope.md), and the upstream commits in [`vendor/README.md`](../vendor/README.md).
 
 ## Name mapping
 
@@ -17,6 +17,7 @@ The Cordis framework and its foundation libraries are vendored under [`vendor/`]
 | `vendor/timer/` | `@cordisjs/plugin-timer` | `@deepseek-ai/cordis-plugin-timer` | 1.1.2 | Disposal-aware timers on `ctx` |
 | `vendor/hmr/` | `@cordisjs/plugin-hmr` | `@deepseek-ai/cordis-plugin-hmr` | 1.0.15 | Hot module replacement for plugins and config |
 | `vendor/logger-console/` | `@cordisjs/plugin-logger-console` | `@deepseek-ai/cordis-plugin-logger-console` | 1.0.0 | Console logger exporter |
+| `vendor/tui/` | `@earendil-works/pi-tui` | `@deepseek-ai/tui` | 0.80.7 | Differential terminal rendering behind `@deepseek-ai/dsh-tui` |
 
 Subpath exports keep their path: `@cordisjs/plugin-loader/repository` becomes `@deepseek-ai/cordis-plugin-loader/repository`.
 
