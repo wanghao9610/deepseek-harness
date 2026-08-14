@@ -20,9 +20,11 @@ The first half is the payload. The closure shipped 25,490 files, over half of wh
 
 [`apps/desktop/build/close-app-processes.nsh`](../../../../apps/desktop/build/close-app-processes.nsh) defines `customCheckAppRunning`, the macro app-builder-lib inserts in place of its own check, and the packaging script names it as the NSIS `include`.
 
-The macro terminates with `taskkill /F /T /IM`, so each match goes down with its children — which also reaps the shells and pty helpers the runtime started, whose image names differ from the application's. The shell dies in the first pass, so nothing is left to restart the runtime, and later passes only clear orphans an earlier crash left behind. The budget is 20 passes at 500 ms rather than two rounds at about three seconds.
+Termination is unconditional. A check that probes first and acts only on a positive result skips the close entirely whenever the probe command itself fails — a silent no-op whose symptom is the failure it was written to prevent — and terminating nothing costs one command that reports no match. The probe still runs, because it decides whether to ask the user, not whether to act.
 
-Detection is `tasklist` filtered by image name. The default check's PowerShell path is unavailable here: `$IsPowerShellAvailable` is initialized only on the branch this macro replaces, so reusing that macro's `FIND_PROCESS` would not compile. Image name is the right criterion regardless, because the runtime shares the shell's executable, and neither the setup nor the uninstaller carries that name, so no pass can terminate the installer running it.
+Each pass matches processes two ways. `taskkill /F /T /IM` takes every image-name match down with its children, so a live shell goes with the runtime and the shells it started. A PowerShell pass then terminates anything whose executable lies under the installation directory, which reaches the native hosts and pty helpers that carry neither the application's name nor, once their parent is gone, a tree reachable from it. The budget is 20 passes at 500 ms rather than two rounds at about three seconds.
+
+The macro carries its own PowerShell probe. The default check's `$IsPowerShellAvailable` is initialized only on the branch this macro replaces, so reusing that macro's `FIND_PROCESS` would not compile. Neither the setup nor the uninstaller carries the application's image name or lives under the installation directory, so no pass can terminate the installer running it.
 
 The macro keeps the confirmation prompt for an install the user started against a running application, and skips it under `isUpdated`, matching the behavior it replaces. Its labels carry a per-insertion suffix because NSIS compiles the installer and the uninstaller as one script and each inserts the macro once.
 
@@ -35,6 +37,12 @@ Nothing in the closure can load any of it. No TypeScript toolchain ships there �
 Markdown is pruned by documentation stem, and exempt under a `config` or `assets` directory. The skill loader reads every `.md` under a skill directory, so a documentation stem there names a skill rather than a document; the shipped Cordis presets and the badge body live in exactly those places.
 
 The pipeline reports the file count beside the size, because that count is what a Windows install is paced by.
+
+### Three sites raise the same message
+
+`appCannotBeClosed` is the text of three distinct failures, and this macro owns one of them. The pre-install check is the site replaced here. `uninstallOldVersion` raises it when the old version's uninstaller returns non-zero five times. `extractAppPackage` raises it when `CopyFiles` over the installed tree fails five times, one second apart — the progress bar is already moving by then, and the Retry button falls through to a `Nsis7z::Extract` that overwrites in place and ignores per-file errors, so answering Retry completes the install non-atomically.
+
+A report of this message therefore has to name its stage before it names a cause: only the first is a process the pre-install pass could have missed, while the other two mean a file was locked after that pass ran, or was never held by a process at all.
 
 ## Alternatives considered
 
