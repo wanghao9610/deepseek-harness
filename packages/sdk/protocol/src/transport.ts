@@ -14,6 +14,16 @@ type JsonRpcId = string | number
 type RequestHandler = (method: string, params: Record<string, unknown>) => Promise<unknown>
 type NotificationHandler = (method: string, params: Record<string, unknown>) => void
 
+/**
+ * Hard ceiling for one newline-delimited frame in UTF-16 code units. A peer
+ * that writes without newlines would otherwise grow the receive buffer without
+ * bound, so an unterminated line that crosses this ceiling is discarded; its
+ * frame is then malformed and ignored per the transport's malformed-line
+ * contract. Legitimate frames (requests, responses, and session event
+ * notifications) stay orders of magnitude below it.
+ */
+export const MAX_FRAME_CHARS = 32 * 1024 * 1024
+
 /** A JSON-RPC error response, preserving the wire `code` and optional `data`. */
 export class JsonRpcResponseError extends Error {
   /**
@@ -175,6 +185,8 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
   private readonly onData = (chunk: Buffer | string): void => {
     this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk)
     this.drainLines()
+    // Complete lines were consumed above; only the unterminated tail remains.
+    if (this.buffer.length > MAX_FRAME_CHARS) this.buffer = ''
   }
 
   private drainLines(): void {

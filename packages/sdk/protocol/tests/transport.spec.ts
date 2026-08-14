@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
-import { describe, expect, it } from 'vitest'
-import { JsonRpcLineTransport, JsonRpcResponseError } from '../src/index.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { JsonRpcLineTransport, JsonRpcResponseError, MAX_FRAME_CHARS } from '../src/index.ts'
 
 function transportPair() {
   const aToB = new PassThrough()
@@ -38,6 +38,26 @@ describe('JsonRpcLineTransport', () => {
     ])
 
     a.close()
+    b.close()
+  })
+
+  it('discards an unterminated line past the frame ceiling and keeps parsing', async () => {
+    const { aToB, bToA } = transportPair()
+    const received: string[] = []
+    const b = new JsonRpcLineTransport(aToB, bToA)
+    b.onRequest(async (method) => {
+      received.push(method)
+      return { ok: true }
+    })
+    b.start()
+
+    aToB.write('x'.repeat(MAX_FRAME_CHARS + 1))
+    await vi.waitFor(() => {
+      expect((b as unknown as { buffer: string }).buffer).toBe('')
+    })
+
+    aToB.write('{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
+    await vi.waitFor(() => { expect(received).toEqual(['ping']) })
     b.close()
   })
 

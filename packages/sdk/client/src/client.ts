@@ -27,6 +27,14 @@ import type { HarnessClientOptions, HarnessNotification, NotificationFilter } fr
 /** Retained stderr lines used to diagnose an unexpected runtime death. */
 const STDERR_TAIL_LIMIT = 400
 
+/**
+ * Hard ceiling for one unterminated stderr capture segment in UTF-16 code
+ * units. A runtime child that streams without newlines would otherwise grow
+ * the diagnostic capture without bound; a segment crossing the ceiling is
+ * discarded.
+ */
+export const MAX_STDERR_TAIL_CHARS = 1024 * 1024
+
 /** Grace for the runtime's stdio streams to settle after its exit edge. */
 const STREAM_SETTLE_MS = 100
 
@@ -229,6 +237,10 @@ export class HarnessClient {
       if (newline >= 0) {
         this.appendStderr(stderrBuffer.slice(0, newline).split('\n'))
         stderrBuffer = stderrBuffer.slice(newline + 1)
+      } else if (stderrBuffer.length > MAX_STDERR_TAIL_CHARS) {
+        // Only the unterminated tail remains; drop an overlong segment instead
+        // of retaining a newline-free spew without bound.
+        stderrBuffer = ''
       }
     })
     let signalStreamsSettled!: () => void
