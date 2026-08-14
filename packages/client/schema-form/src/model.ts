@@ -85,7 +85,12 @@ export function hasPath(value: unknown, path: readonly string[]): boolean {
   if (path.length === 0) return value !== undefined
   const parent = getPath(value, path.slice(0, -1))
   const key = path[path.length - 1] as string
-  if (Array.isArray(parent)) return Number(key) < parent.length
+  if (Array.isArray(parent)) {
+    // Only a non-negative integer addresses an element: splice with '-1' (or a
+    // fraction) would remove the WRONG element — the path must not resolve.
+    const index = Number(key)
+    return Number.isSafeInteger(index) && index >= 0 && index < parent.length
+  }
   if (typeof parent !== 'object' || parent === null) return false
   return key in parent
 }
