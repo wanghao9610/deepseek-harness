@@ -45,6 +45,14 @@ describe('dsh path helpers', () => {
     expect(resolveDshHome(undefined, { DSH_HOME: '   ' })).toBe(defaultDshHome())
   })
 
+  it('treats a blank configured override as unset too, never resolving to the cwd', () => {
+    const envHome = join(homedir(), 'env-dsh')
+    expect(resolveDshHome('', { DSH_HOME: '~/env-dsh' })).toBe(envHome)
+    expect(resolveDshHome('   ', { DSH_HOME: '~/env-dsh' })).toBe(envHome)
+    expect(resolveDshHome('', {})).toBe(defaultDshHome())
+    expect(resolveDshHome('   ', {})).toBe(defaultDshHome())
+  })
+
   it('joins child segments onto the resolved DSH_HOME', () => {
     vi.stubEnv('DSH_HOME', '~/env-dsh')
     expect(dshHomePath()).toBe(join(homedir(), 'env-dsh'))
