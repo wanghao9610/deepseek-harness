@@ -54,7 +54,10 @@ export function mapUsage(usage: WireUsage): TokenUsage {
   const cacheRead = usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens
   const reasoning = usage.completion_tokens_details?.reasoning_tokens
   return {
-    inputTokens: usage.prompt_tokens - (cacheRead ?? 0),
+    // A misbehaving gateway can report cache reads above the prompt total;
+    // the harness contract requires disjoint non-negative buckets, so clamp
+    // instead of emitting a negative uncached count.
+    inputTokens: Math.max(0, usage.prompt_tokens - (cacheRead ?? 0)),
     outputTokens: usage.completion_tokens,
     ...cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {},
     ...reasoning !== undefined ? { reasoningTokens: reasoning } : {},
