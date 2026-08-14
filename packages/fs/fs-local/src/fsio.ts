@@ -598,6 +598,10 @@ export async function writeFileAtomic(
     } catch (_committedStagingCleanupFailure) {
       // The target is committed; owner-only staging residue cannot turn that write into a failure.
     }
+    await syncDirectory(dirname(absolutePath)).catch(
+      /* v8 ignore next -- a directory-fsync failure is not stageable with the real filesystem. */
+      () => {},
+    )
   } catch (error: unknown) {
     /* v8 ignore next -- abort-mid-write needs a writeFile/signal race; the non-abort (rename/open) side is tested. */
     let failure: unknown = isAbortError(error) ? new FsError('write aborted', 'FS_ABORTED') : error
@@ -615,6 +619,22 @@ export async function writeFileAtomic(
 }
 
 // --- Editing ---
+
+/**
+ * Crash-durably publish a just-renamed entry: fsync the parent directory on
+ * POSIX (Windows rejects directory handles). Best-effort by design — the
+ * write itself already committed, and failing it over an fsync refusal would
+ * misreport a durable file as a failed write.
+ */
+async function syncDirectory(path: string): Promise<void> {
+  if (process.platform === 'win32') return
+  const handle = await open(path, 'r')
+  try {
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+}
 
 /** Line ending style detected before LF normalization. */
 export type LineEndings = 'LF' | 'CRLF'

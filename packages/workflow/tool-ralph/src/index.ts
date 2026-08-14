@@ -12,6 +12,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools'
+import { DEFAULT_MAX_TOTAL_AGENTS } from '@deepseek-ai/dsh-workflow'
 import type { WorkflowResult, WorkflowRun } from '@deepseek-ai/dsh-workflow'
 // Declaration merge only: makes ctx.systemPrompt visible for section registration.
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -34,7 +35,9 @@ export interface Config {
 /** Schemastery configuration for the Ralph tool. */
 export const Config: z<Config> = z.object({
   subagentProvider: z.string().default('spawn'),
-  maxRounds: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(256),
+  // Bounded by the engine's default total-child ceiling: a higher round cap
+  // would fail every run at engine start instead of failing loud at load.
+  maxRounds: z.number().step(1).min(1).max(DEFAULT_MAX_TOTAL_AGENTS).default(256),
   maxHandoffChars: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(16_384),
   maxResultChars: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(16_384),
 })
@@ -194,6 +197,11 @@ function resolveConfig(config: Config): ResolvedConfig {
   }
   if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
     throw new TypeError('maxRounds must be a positive safe integer')
+  }
+  if (maxRounds > DEFAULT_MAX_TOTAL_AGENTS) {
+    // A round cap above the engine's default total-child ceiling would fail
+    // every run at engine start; fail loud here instead.
+    throw new TypeError('maxRounds must not exceed the workflow engine ceiling (' + String(DEFAULT_MAX_TOTAL_AGENTS) + ')')
   }
   if (!Number.isSafeInteger(maxHandoffChars) || maxHandoffChars < 1) {
     throw new TypeError('maxHandoffChars must be a positive safe integer')

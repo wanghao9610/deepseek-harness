@@ -1,6 +1,8 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
-import { basename, dirname, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
@@ -133,6 +135,24 @@ describe('LocalSubprocessRuntime', () => {
     await expect(ctx.subprocess.resolveExecutable(process.execPath, {}, AbortSignal.abort('stop')))
       .rejects.toBe('stop')
     await fiber.dispose()
+  })
+
+  it('resolves relative PATH entries against the supplied cwd, not the harness cwd', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    const root = mkdtempSync(join(tmpdir(), 'dsh-resolve-cwd-'))
+    try {
+      mkdirSync(join(root, 'bin'))
+      const tool = join(root, 'bin', 'tool')
+      writeFileSync(tool, '#!/usr/bin/env sh\necho hi\n')
+      chmodSync(tool, 0o755)
+      expect(await ctx.subprocess.resolveExecutable('tool', { PATH: 'bin' }, undefined, root)).toBe(tool)
+      // The same PATH entry without a cwd resolves against process.cwd() and misses.
+      await expect(ctx.subprocess.resolveExecutable('tool', { PATH: 'bin' })).rejects.toThrow('was not found on PATH')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      await fiber.dispose()
+    }
   })
 
   it('builds Windows executable candidates with case-insensitive overrides', async () => {

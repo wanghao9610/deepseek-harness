@@ -83,6 +83,13 @@ describe('dsh-tool-subagent', () => {
     )
   })
 
+  it('rejects an empty prompt instead of minting a spurious child turn', async () => {
+    const ctx = await setup({ provider: 'mock' })
+    const result = await callSubagent(ctx, { description: 'do a thing', prompt: '   ' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('subagent tool prompt must be a non-empty string')
+  })
+
   it('registers a `subagent` tool that delegates to the configured provider and returns its output', async () => {
     const ctx = await setup({ provider: 'mock' }, { reply: 'child says hi' })
     const result = await callSubagent(ctx, { description: 'do a thing', prompt: 'go research X' })

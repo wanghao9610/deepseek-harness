@@ -9,7 +9,7 @@ import type { SubagentCapabilities, SubagentProvider, SubagentRun, SubagentStart
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { WorkflowRunId, WorkflowEngine } from '@deepseek-ai/dsh-workflow'
+import { DEFAULT_MAX_TOTAL_AGENTS, WorkflowRunId, WorkflowEngine } from '@deepseek-ai/dsh-workflow'
 import type { WorkflowResult, WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflow'
 import * as toolRalph from '../src/index.ts'
 
@@ -326,6 +326,7 @@ describe('dsh-tool-ralph', () => {
   it('rejects invalid direct-apply config before touching injected services', () => {
     expect(() => { toolRalph.apply(new Context(), { subagentProvider: ' ' }) }).toThrow('non-empty normalized')
     expect(() => { toolRalph.apply(new Context(), { maxRounds: 0 }) }).toThrow('positive safe integer')
+    expect(() => { toolRalph.apply(new Context(), { maxRounds: DEFAULT_MAX_TOTAL_AGENTS + 1 }) }).toThrow('must not exceed')
     expect(() => { toolRalph.apply(new Context(), { maxHandoffChars: 1.5 }) }).toThrow('positive safe integer')
     expect(() => { toolRalph.apply(new Context(), { maxResultChars: 0 }) }).toThrow('positive safe integer')
   })
