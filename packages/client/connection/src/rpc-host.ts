@@ -181,7 +181,16 @@ function rpcFetchHandler(
         const result = await handler(endpoint, message.payload, request.signal)
         return fullResponse(message.rpcId, result)
       } catch (error) {
-        return new Response(`handler failure: ${String(error)}`, { status: 500 })
+        // The handler threw instead of returning an RpcError: the response
+        // body stays the structured error envelope — a raw message can carry
+        // internal detail (settings, credentials, provider paths) that never
+        // belongs in an HTTP body. The diagnostic stays server-side.
+        console.error('connection RPC handler failed:', error)
+        return errorResponse(message.rpcId, {
+          code: 'internal',
+          message: 'handler failure',
+          details: {},
+        })
       }
     },
   }

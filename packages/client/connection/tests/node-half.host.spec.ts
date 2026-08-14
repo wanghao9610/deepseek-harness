@@ -395,7 +395,12 @@ describe('connection node half', () => {
     await route.handler(fakePost({ host: 'harness.example' }, '/rpc/fail', {
       type: 'client-request', rpcId: 'rpc-fail', method: 'fail', payload: {},
     }), failed.response)
-    expect(failed.state).toMatchObject({ status: 500, body: 'handler failure: Error: handler broke' })
+    // The throwing handler keeps the structured envelope: the raw error text
+    // (which can carry internal detail) never reaches the response body.
+    expect(JSON.parse(String(failed.state.body))).toMatchObject({
+      rpcId: 'rpc-fail',
+      result: { ok: false, error: { code: 'internal', message: 'handler failure' } },
+    })
 
     expect(() => connection.rpc.handle('/api', async () => ({ ok: true, value: null }), {
       authority: 'loopback',

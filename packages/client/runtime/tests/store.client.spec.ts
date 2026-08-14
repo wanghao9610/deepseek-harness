@@ -240,6 +240,24 @@ describe('defineStore', () => {
     expect(backing.has('spec.chat')).toBe(true)
   })
 
+  it('clearPersisted removes both storage cells', () => {
+    const shared = new Map<string, string>()
+    const own = new Map<string, string>()
+    stubStorage('localStorage', shared)
+    stubStorage('sessionStorage', own)
+    const handle = defineStore({
+      init: () => ({ draft: '' }),
+      persist: 'spec.chat',
+      actions: { setDraft: (d, text: string) => { d.draft = text } },
+    })
+    handle.create('s1').actions.setDraft('one')
+    handle.create('s1').clearPersisted()
+    expect(shared.has('spec.chat.s1')).toBe(false)
+    expect(own.has('spec.chat.s1')).toBe(false)
+    // A fresh instance rehydrates empty, not the cleared value.
+    expect(handle.create('s1').store.getSnapshot().draft).toBe('')
+  })
+
   it('clearPersisted is a no-op without a persist declaration or without storage', () => {
     const inst = declare().create('s1')   // no persist key declared
     expect(() => { inst.clearPersisted() }).not.toThrow()

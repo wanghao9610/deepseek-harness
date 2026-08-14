@@ -274,12 +274,22 @@ export function defineStore<T, A extends ActionsDecl<T>>(
         subscribe: fn => store.subscribe(fn),
         store,
         clearPersisted: () => {
-          if (persistKey === undefined || typeof localStorage === 'undefined') return
-          try {
-            localStorage.removeItem(persistKey)
-          } catch {
-            // Storage failures (private mode, quota teardown races) only skip
-            // cleanup — the same non-fatal contract as attachPersistence.
+          if (persistKey === undefined) return
+          // Window-scope stores persist to BOTH cells (attachPersistence
+          // writes own + shared); clearing only localStorage would rehydrate
+          // the sessionStorage value on the next load.
+          const cells = [
+            typeof localStorage === 'undefined' ? undefined : localStorage,
+            typeof sessionStorage === 'undefined' ? undefined : sessionStorage,
+          ]
+          for (const cell of cells) {
+            if (cell === undefined) continue
+            try {
+              cell.removeItem(persistKey)
+            } catch {
+              // Storage failures (private mode, quota teardown races) only skip
+              // cleanup — the same non-fatal contract as attachPersistence.
+            }
           }
         },
       }

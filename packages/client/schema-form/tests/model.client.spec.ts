@@ -39,6 +39,10 @@ describe('path helpers', () => {
     expect(hasPath({ leaf: 'x' }, ['leaf', 'deeper'])).toBe(false)
     expect(hasPath({ models: ['a'] }, ['models', '0'])).toBe(true)
     expect(hasPath({ models: ['a'] }, ['models', '1'])).toBe(false)
+    // Negative or fractional segments never address an array element: splice
+    // with '-1' removes the LAST element, so such paths must not resolve.
+    expect(hasPath({ models: ['a', 'b'] }, ['models', '-1'])).toBe(false)
+    expect(hasPath({ models: ['a', 'b'] }, ['models', '0.5'])).toBe(false)
     expect(hasPath({ root: true }, [])).toBe(true)
     expect(hasPath(undefined, [])).toBe(false)
   })
@@ -64,6 +68,8 @@ describe('path helpers', () => {
     const withoutModel = deletePath(withoutKey, ['models', '0'])
     expect(withoutModel.models).toEqual(['b'])
     expect(deletePath(draft, ['providers', 'missing', 'x'])).toBe(draft)
+    // A negative index must not splice the wrong element out.
+    expect(deletePath({ models: ['a', 'b'] }, ['models', '-1'])).toEqual({ models: ['a', 'b'] })
     expect(() => deletePath({}, [])).toThrow(/non-empty path/)
   })
 
