@@ -87,6 +87,8 @@ export class SessionInputShell implements SessionInput {
   private lastDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
   private disposed = false
+  /** In-flight reference serialization, aborted by dispose(). */
+  private serializationController: AbortController | undefined
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
 
@@ -352,6 +354,10 @@ export class SessionInputShell implements SessionInput {
   /** Teardown: abort any in-flight attempt and stop accepting async settlements. */
   dispose(): void {
     this.disposed = true
+    // Cancel in-flight reference serialization too: teardown reaches
+    // quiescence instead of letting the async codec run on and drop.
+    this.serializationController?.abort()
+    this.serializationController = undefined
     this.run(this.core.dispatch({ type: 'release' }))
   }
 
@@ -422,6 +428,7 @@ export class SessionInputShell implements SessionInput {
     }
     const inputTriggers = this.deps.inputTriggers?.()
     const controller = new AbortController()
+    this.serializationController = controller
     void Promise.all(occurrences.map(async (o) => {
       if (inputTriggers === undefined) throw new Error(`no serializer for reference source "${o.source}"`)
       return { offset: o.offset, text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal) }
@@ -438,9 +445,11 @@ export class SessionInputShell implements SessionInput {
         }
         out += draft.slice(cursor)
         this.deps.defaultSink(out.trim(), imageIds, mode)
+        if (this.serializationController === controller) this.serializationController = undefined
       },
       (error: unknown) => {
         controller.abort()
+        if (this.serializationController === controller) this.serializationController = undefined
         if (this.disposed) return
         const message = error instanceof Error ? error.message : String(error)
         this.notify('error', message)
