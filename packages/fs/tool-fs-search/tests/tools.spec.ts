@@ -138,6 +138,10 @@ class FakeHandle implements SubprocessHandle {
   waitForExit(_signal?: AbortSignal): Promise<boolean> {
     return Promise.resolve(true)
   }
+
+  treeAlive(): boolean {
+    return !this.settled
+  }
 }
 
 /**

@@ -171,6 +171,7 @@ describe('spawn construction (pure, every platform)', () => {
         done: Promise.resolve({ exitCode: 0, signal: null }),
         terminate: () => {},
         waitForExit: async () => true,
+        treeAlive: () => false,
       }
     }
   }

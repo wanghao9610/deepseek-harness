@@ -34,6 +34,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
       done: Promise.resolve({ exitCode: 0, signal: null }),
       terminate: () => {},
       waitForExit: () => Promise.resolve(true),
+      treeAlive: () => false,
     }
   }
 

@@ -37,7 +37,13 @@ function hooks(d: string, h: unknown): string {
   writeFileSync(join(d, 'hooks.json'), JSON.stringify({ hooks: h })); return join(d, 'hooks.json')
 }
 
-type HarnessOpts = { pluginRoot?: string; projectDir?: string; stderrSummaryMaxChars?: number; sessionRoot?: string }
+type HarnessOpts = {
+  pluginRoot?: string
+  projectDir?: string
+  stderrSummaryMaxChars?: number
+  sessionRoot?: string
+  defaultTimeoutMs?: number
+}
 async function harness(configPath: string, adapter: MockAdapter, opts: HarnessOpts = {}): Promise<Context> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
